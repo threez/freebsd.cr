@@ -1,0 +1,342 @@
+# FreeBSD::Casper
+
+Crystal bindings for **[Capsicum]** — FreeBSD's in-kernel capability mode —
+and **libcasper**, the userspace service framework that lets a sandboxed
+process delegate privileged work to a trusted helper.
+
+[Capsicum]: https://www.cl.cam.ac.uk/research/security/capsicum/
+
+```crystal
+require "freebsd/casper"
+```
+
+> **Platform:** FreeBSD primary, DragonFlyBSD best-effort. On other platforms
+> the shard compiles cleanly but any call raises
+> `FreeBSD::Capsicum::UnsupportedPlatformError`.
+
+## Sandbox the current process
+
+```crystal
+require "freebsd/casper"
+
+FreeBSD::Capsicum.sandbox do
+  # Capability mode is active. Global namespaces are gone:
+  # File.open("/etc/passwd") here would raise (ECAPMODE).
+  # Pre-opened FDs still work, subject to their rights.
+end
+```
+
+`FreeBSD::Capsicum.sandbox!` enters capability mode without yielding — it is
+one-way per process; once entered there is no going back.
+
+## Restrict rights on a file descriptor
+
+```crystal
+require "freebsd/casper"
+
+f = File.open("/var/log/app.log", "a")
+FreeBSD::Capsicum::Capability::Rights
+  .new(FreeBSD::Capsicum::Capability::Right::Write,
+       FreeBSD::Capsicum::Capability::Right::Fsync,
+       FreeBSD::Capsicum::Capability::Right::Fstat)
+  .apply_to(f)
+
+FreeBSD::Capsicum.sandbox!
+f.puts "now we're confined"   # works — Write was retained
+# f.read would fail — Read was not granted
+```
+
+## Delegate DNS to the Casper helper
+
+```crystal
+require "freebsd/casper"
+
+chan = FreeBSD::Casper::Channel.open    # open BEFORE sandboxing
+dns  = chan.dns
+dns.limit_families(Socket::Family::INET, Socket::Family::INET6)
+chan.close                               # only `dns` is needed from here on
+
+FreeBSD::Capsicum.sandbox!
+
+dns.getaddrinfo("example.com").each do |a|
+  puts a.address
+end
+```
+
+## Transparent DNS — use the Crystal stdlib without changes
+
+`require "freebsd/casper/integrate/dns"` patches Crystal's `Socket::Addrinfo`
+so that every standard-library lookup — `TCPSocket.new("host", port)`, URI host
+resolution, `HTTP::Client.get`, `Socket.tcp`, … — silently routes through the
+Casper helper once a global DNS service has been installed. Without one, the
+ordinary `getaddrinfo(3)` path is taken, so the require is safe to load
+unconditionally.
+
+```crystal
+require "freebsd/casper"
+require "freebsd/casper/integrate/dns"
+require "http/client"
+
+FreeBSD::Casper.install_dns!   # opens the channel, takes system.dns, registers it
+FreeBSD::Capsicum.sandbox!
+
+# Plain stdlib — no Casper API in sight. The TCP connect's DNS lookup
+# now runs in the Casper helper, not in this sandboxed process.
+puts HTTP::Client.get("https://example.com").status_code
+```
+
+## Transparent `Socket` policy — restrict who you can connect/bind to
+
+`require "freebsd/casper/integrate/net"` patches `Crystal::System::Socket`'s
+`system_bind` and `system_connect` chokepoints so plain `TCPSocket.new(...)`
+and `UDPSocket#bind` calls route through the Casper Net helper and are
+policy-checked against a configured allow-list.
+
+```crystal
+require "freebsd/casper"
+require "freebsd/casper/integrate/net"
+
+net = FreeBSD::Casper.install_net!
+net.limit(FreeBSD::Casper::Service::Net::Mode::Connect |
+          FreeBSD::Casper::Service::Net::Mode::Bind) do |builder|
+  builder.allow_connect(Socket::IPAddress.new("93.184.216.34", 443))
+  builder.allow_bind(Socket::IPAddress.new("0.0.0.0", 0))
+end
+
+FreeBSD::Capsicum.sandbox!
+
+# Stdlib code, no Casper API in sight. The helper validates each connect.
+TCPSocket.new("93.184.216.34", 443)   # ok
+TCPSocket.new("8.8.8.8", 53)          # raises Socket::ConnectError — outside policy
+```
+
+This is *defense in depth*, not "make stdlib work" — plain `connect`/`bind`
+already work under `cap_enter` on FreeBSD. The helper adds a policy layer.
+
+Caveats: `cap_connect` is synchronous, so `Socket#connect(timeout:)` semantics
+are coarsened (the call blocks cooperatively via `Fiber.syscall` until it
+succeeds or the kernel times it out). Only address-bearing operations are hooked
+— `listen`/`accept`/`send`/`recv` keep their stdlib paths.
+
+## Custom helpers — your own Casper-style privsep service in Crystal
+
+If the shipped services don't cover what your sandboxed child needs to delegate,
+`FreeBSD::Casper::Helper.spawn` gives you the same architecture in pure Crystal:
+forks a trusted helper that serves requests, returns a `Client` to the calling
+process. They speak a small length-prefixed wire protocol over a `UNIXSocket`
+pair. No `casperd` plugin `.so` required.
+
+On FreeBSD/DragonFly the helper's process title is set to `progname.name`
+(e.g. `myapp.calc`), matching the `system.dns` naming convention used by
+`casperd` service workers. Unnamed helpers use `progname.helper`.
+
+**Raw API** — useful when you need full control over op names and bytes:
+
+```crystal
+require "freebsd/casper"
+
+client = FreeBSD::Casper::Helper.spawn(name: "files") do |server|
+  # Forked helper — unsandboxed. Loops until the caller closes its end.
+  server.serve do |op, payload|
+    case op
+    when "read" then File.read(String.new(payload)).to_slice
+    when "ping" then "pong".to_slice
+    else             raise "unknown op: #{op}"
+    end
+  end
+end
+
+# Caller — sandboxed, communicates via the client handle.
+FreeBSD::Capsicum.sandbox!
+
+puts String.new(client.request("ping"))             # => "pong"
+puts String.new(client.request("read", "/etc/hosts".to_slice))
+# ps shows: myapp.files
+```
+
+**Typed API** — declare request/response structs and let the helper route and
+serialize automatically. The default codec is `FreeBSD::Casper::Codec::NVList`
+(uses `FreeBSD::NVList::Serializable`); pass `codec: FreeBSD::Casper::Codec::JSON`
+for JSON-backed structs:
+
+```crystal
+require "freebsd/casper"
+
+record ReadFile, path : String do
+  include FreeBSD::NVList::Serializable
+end
+
+record FileContent, data : String do
+  include FreeBSD::NVList::Serializable
+end
+
+client = FreeBSD::Casper::Helper.spawn(name: "files") do |server|
+  server.on(ReadFile) { |req| FileContent.new(data: File.read(req.path)) }
+  server.serve_typed
+end
+
+FreeBSD::Capsicum.sandbox!
+
+content = client.request(ReadFile.new(path: "/etc/hosts"), FileContent)
+puts content.data   # fully typed String
+```
+
+Exceptions raised inside the helper are caught, serialized, and re-raised in
+the caller as `FreeBSD::Casper::Helper::RemoteError`. An unrecognized op in the
+typed dispatch raises `RemoteError` with message `"unknown op: <T.name>"`. A
+single `Client` is not internally multiplexed; wrap it in a queue if you need
+concurrent requests.
+
+## Crystal `Log` to syslog from a sandbox
+
+`require "freebsd/casper/integrate/log"` adds
+`FreeBSD::Casper::Log::SyslogBackend`, a `Log::Backend` that forwards each
+`Log::Entry` to `syslogd(8)` via Casper's `system.syslog` helper. Severities
+map onto syslog priorities (`fatal` → `crit`, `error` → `err`, `warn` →
+`warning`, `notice`/`info`/`debug` as is, `trace` → `debug`).
+
+```crystal
+require "freebsd/casper"
+require "freebsd/casper/integrate/log"
+
+syslog = FreeBSD::Casper.install_syslog!(
+  ident: "myapp",
+  options: FreeBSD::Casper::Service::Syslog::LogOption::Pid,
+  facility: FreeBSD::Casper::Service::Syslog::Facility::Local0,
+)
+Log.setup(:info, FreeBSD::Casper::Log::SyslogBackend.new(syslog))
+FreeBSD::Capsicum.sandbox!
+
+Log.info { "ready to serve" }
+```
+
+Unlike the DNS/file/net hooks this is *not* monkey-patching — it is a normal
+`Log::Backend` you opt into via `Log.setup`. The underlying
+`FreeBSD::Casper::Service::Syslog` (`openlog`/`syslog`/`closelog`/`log_mask=`)
+is also usable directly for code that doesn't go through Crystal's `Log`.
+
+> **Caveat:** `Log::Entry` records a `Time.local` timestamp. `Time.local` reads
+> `/etc/localtime` on its first call, which is blocked inside capability mode.
+> Call `Time.local` once **before** `FreeBSD::Capsicum.sandbox!` to prime the cache:
+>
+> ```crystal
+> Time.local   # prime /etc/localtime before entering capability mode
+> FreeBSD::Capsicum.sandbox!
+> Log.info { "ready" }
+> ```
+
+## Privsep with `pdfork` — fork a child you can still control from a sandbox
+
+`pdfork(2)` forks a child and returns it as a *file descriptor* rather than a
+PID. The descriptor stays valid after `cap_enter` (capability mode wipes the
+PID namespace but not your fds), so the parent can `kill`/`close` the child
+from inside the sandbox — the canonical Capsicum privsep pattern.
+
+```crystal
+require "freebsd/casper"
+
+pd = FreeBSD::Capsicum.pdfork do
+  # Child: drop into the actual workload and sandbox.
+  FreeBSD::Capsicum.sandbox!
+  do_untrusted_work
+  0   # exit code
+end
+
+# Parent: can sandbox itself and still manage the child via the pd.
+FreeBSD::Capsicum.sandbox!
+
+pd.pid                          # global PID (logging only — unusable in cap mode)
+pd.current_pid                  # nil once the kernel has reaped the child
+pd.kill(Signal::TERM)
+status = pd.wait                # blocks via kqueue/EVFILT_PROCDESC; works in cap mode
+status.try(&.exit_code)         # => Int32?, just like Process::Status
+pd.wait(500.milliseconds)       # => nil on timeout (child still running)
+pd.close                        # SIGKILL + reap (unless created with daemon: true)
+```
+
+Exceptions raised inside the child block are caught and logged to stderr; the
+child exits with status 1 rather than escaping.
+
+## Transparent `File` ops — work on pre-declared paths from a sandbox
+
+`require "freebsd/casper/integrate/file"` patches `Crystal::System::File` so
+plain stdlib calls on paths declared up-front route through the Casper helper:
+
+| Stdlib call | Hooked to |
+| --- | --- |
+| `File.open` / `File.read` / `File.each_line` | `fileargs_open` |
+| `File.info` / `File.info?` | `fileargs_lstat` |
+| `File.exists?` | `fileargs_lstat` (truthy on success) |
+| `File.real_path` | `fileargs_realpath` |
+
+Undeclared paths fall through to libc — the require is safe to load
+unconditionally. To enable `info?`/`exists?` and `real_path` you must opt in at
+FileArgs creation via `fa_flags`:
+
+```crystal
+require "freebsd/casper"
+require "freebsd/casper/integrate/file"
+
+FreeBSD::Casper.install_fileargs!(
+  ["/etc/hosts", "/etc/resolv.conf"],
+  flags: LibC::O_RDONLY,
+  fa_flags: FreeBSD::Casper::Service::FileArgs::OPEN |
+            FreeBSD::Casper::Service::FileArgs::LSTAT |
+            FreeBSD::Casper::Service::FileArgs::REALPATH,
+)
+FreeBSD::Capsicum.sandbox!
+
+File.read("/etc/hosts")            # works
+File.exists?("/etc/hosts")         # true
+File.info("/etc/hosts").size       # works
+File.real_path("/etc/hosts")       # "/etc/hosts"
+File.read("/etc/passwd")           # raises File::Error (undeclared)
+```
+
+Paths are matched *exactly* as declared (no symlink resolution, no `..`
+normalization). `info?(follow_symlinks: true)` is downgraded to `lstat` because
+fileargs only exposes `lstat` — observable difference only if the declared path
+is itself a symlink. `Dir.glob`, `Dir.entries`, and similar directory operations
+are *not* hooked (fileargs is single-path).
+
+## Password / group / sysctl lookups
+
+```crystal
+require "freebsd/casper"
+
+chan = FreeBSD::Casper::Channel.open
+pwd  = chan.pwd
+grp  = chan.grp
+sys  = chan.sysctl
+
+pwd.limit_users(names: ["root", "nobody"])
+sys.limit({"kern.ostype" => FreeBSD::Casper::Service::Sysctl::Mode::Read})
+chan.close
+
+FreeBSD::Capsicum.sandbox!
+
+pwd.getpwnam("root").try(&.shell)         # => "/bin/sh"
+grp.getgrgid(0_u32).try(&.name)           # => "wheel"
+sys.get_string("kern.ostype")             # => "FreeBSD"
+```
+
+## What's covered (v0.1)
+
+- Capsicum: `cap_enter`, `cap_sandboxed`, rights init/set/clear/limit/get,
+  `cap_ioctls_limit`, `cap_fcntls_limit`, process descriptors (`pdfork`,
+  `pdgetpid`, `pdkill`).
+- libcasper core: `cap_init`, `cap_service_open`, `cap_clone`, `cap_close`.
+- Services: `system.dns`, `system.pwd`, `system.grp`, `system.sysctl`,
+  `system.fileargs`, `system.net`, `system.syslog`.
+- Stdlib integrations:
+  - `freebsd/casper/integrate/dns` — `Socket::Addrinfo.getaddrinfo` (covers
+    `TCPSocket`, `URI`, `HTTP::Client`).
+  - `freebsd/casper/integrate/file` — `File.open`, `File.info?`, `File.exists?`,
+    `File.real_path` for declared paths.
+  - `freebsd/casper/integrate/net` — `Socket#bind`, `Socket#connect` enforce a
+    `cap_net` allow-list.
+  - `freebsd/casper/integrate/log` — `Log::Backend` that writes to `syslogd(8)`
+    through the Casper helper.
+- Pure-Crystal Casper-style helpers: `FreeBSD::Casper::Helper.spawn` for
+  building your own trusted-parent / sandboxed-child pair when the shipped
+  services don't fit.

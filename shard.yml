@@ -1,0 +1,21 @@
+name: freebsd
+version: 15.0.0
+
+authors:
+  - Vincent Landgraf <vincent@landgrafx.de>
+
+description: |
+  Crystal bindings for FreeBSD security primitives: Capsicum (capability mode),
+  libcasper (privileged service framework), libbsm (BSM audit), and privilege-drop
+  helpers. Lets Crystal programs sandbox themselves with kernel-enforced capability
+  limits, delegate privileged operations (DNS, pwd, grp, sysctl) to helper processes,
+  write structured audit events, and safely drop root.
+
+crystal: '>= 1.19.1'
+
+license: MIT
+
+development_dependencies:
+  ameba:
+    github: crystal-ameba/ameba
+    version: ~> 1.6.0
