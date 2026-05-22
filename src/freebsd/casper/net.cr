@@ -1,4 +1,6 @@
 require "../casper"
+require "./integrate/dns"
+require "./integrate/net"
 
 {% if flag?(:freebsd) || flag?(:dragonfly) %}
   @[Link("cap_net")]
@@ -13,6 +15,12 @@ require "../casper"
     CAPNET_CONNECT              = 0x10_u64
     CAPNET_BIND                 = 0x20_u64
     CAPNET_CONNECTDNS           = 0x40_u64
+
+    fun cap_getaddrinfo(chan : LibCasper::CapChannel,
+                        hostname : LibC::Char*,
+                        servname : LibC::Char*,
+                        hints : Void*,
+                        res : Void**) : Int32
 
     fun cap_bind(chan : LibCasper::CapChannel,
                  s : Int32,
@@ -116,6 +124,30 @@ module FreeBSD::Casper
       {% end %}
     end
 
+    # DNS resolution via the Net service channel. `cap_net` provides
+    # `cap_getaddrinfo` directly, making `system.dns` unnecessary.
+    # Required when using `Mode::Name2Addr` or `Mode::ConnectDNS` limits.
+    #
+    # Returns the raw `LibC::Addrinfo*` chain; the caller must release it
+    # with `LibC.freeaddrinfo`. Raises `Socket::Addrinfo::Error` on failure.
+    def raw_getaddrinfo(host : String,
+                        service : String? = nil,
+                        hints : LibC::Addrinfo* = Pointer(LibC::Addrinfo).null) : LibC::Addrinfo*
+      {% if flag?(:freebsd) || flag?(:dragonfly) %}
+        check_open!
+        res = Pointer(LibC::Addrinfo).null
+        svc = service.nil? ? Pointer(LibC::Char).null : service.to_unsafe
+        rc = LibCapNet.cap_getaddrinfo(@handle, host, svc,
+          hints.as(Void*), pointerof(res).as(Void**))
+        unless rc.zero?
+          raise ::Socket::Addrinfo::Error.from_os_error(nil, Errno.new(rc), domain: host)
+        end
+        res
+      {% else %}
+        raise ::FreeBSD::Capsicum::UnsupportedPlatformError.new
+      {% end %}
+    end
+
     # Build and apply a limit set. The block yields a `LimitBuilder`; once it
     # returns, the limit is committed to the helper and takes effect for all
     # subsequent operations on this service.
@@ -196,6 +228,17 @@ module FreeBSD::Casper
             raise ::FreeBSD::Capsicum::Error.from_errno("cap_net_limit_name2addr_family")
           end
         end
+
+        # Allow forward DNS for a specific hostname and optional service/port.
+        # Use with `Mode::Name2Addr` in the `limit` call.
+        # Per cap_net(3), when combined with `Mode::ConnectDNS`, restricts
+        # cap_connect to addresses returned for this specific name.
+        def allow_name2addr(name : String, service : String? = nil) : Nil
+          svc = service.nil? ? Pointer(LibC::Char).null : service.to_unsafe
+          if LibCapNet.cap_net_limit_name2addr(@handle, name, svc).null?
+            raise ::FreeBSD::Capsicum::Error.from_errno("cap_net_limit_name2addr")
+          end
+        end
       {% else %}
         protected def initialize(@handle : Void*)
         end
@@ -234,5 +277,40 @@ module FreeBSD::Casper
 
   def self.uninstall_net : Nil
     @@net = nil
+  end
+
+  # Install the Casper `system.net` service with a policy limit, injecting
+  # a `Crystal.main_user_code` override that runs before the Crystal runtime
+  # starts. This is the ergonomic alternative to writing the override by hand.
+  #
+  # Call at the **top level** of your program (outside any method), before
+  # `require`-ing any code that touches the event loop.
+  #
+  # ```crystal
+  # require "freebsd/casper/net"
+  # require "freebsd/casper/integrate/dns"
+  # require "freebsd/casper/integrate/net"
+  #
+  # FreeBSD::Casper.register_net(
+  #   FreeBSD::Casper::Service::Net::Mode::Name2Addr |
+  #   FreeBSD::Casper::Service::Net::Mode::ConnectDNS
+  # ) do |b|
+  #   b.allow_name2addr("example.com", "80")
+  # end
+  #
+  # FreeBSD::Capsicum.sandbox!
+  # HTTP::Client.get("http://example.com/")  # routed through the net helper
+  # ```
+  macro register_net(mode, &block)
+    def Crystal.main_user_code(argc : Int32, argv : UInt8**)
+      \{% if flag?(:freebsd) || flag?(:dragonfly) %}
+        _chan = FreeBSD::Casper::Channel.open
+        _net  = _chan.net
+        _net.limit({{mode}}) {{block}}
+        _chan.close
+        FreeBSD::Casper.install_net(_net)
+      \{% end %}
+      previous_def
+    end
   end
 end

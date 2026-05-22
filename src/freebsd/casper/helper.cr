@@ -20,7 +20,7 @@ module FreeBSD::Casper
   # ship a `.so` plugin to `casperd`.
   #
   # On FreeBSD/DragonFly the helper's process title is set to
-  # `progname.name` (e.g. `myapp.calc`), matching the `system.dns` convention
+  # `progname.name` (e.g. `myapp.calc`), matching the `system.net` convention
   # used by `casperd` service workers. Unnamed helpers use `progname.helper`.
   #
   # **Raw API** — full control, no serialization:
@@ -82,6 +82,135 @@ module FreeBSD::Casper
     #   payload     : bytes
     private FORMAT = IO::ByteFormat::BigEndian
 
+    # Internal state threaded through the pdfork boundary.
+    # These are set in main_user_code (before runtime) and read in __crystal_main.
+    {% if flag?(:freebsd) || flag?(:dragonfly) %}
+      @@is_helper : Bool = false
+      @@helper_fd : Int32 = -1
+      @@client_fd : Int32 = -1
+      @@pd        : FreeBSD::Capsicum::ProcessDescriptor? = nil
+      @@_clients  : Hash(String, Client(Codec::NVList)) = Hash(String, Client(Codec::NVList)).new
+
+      # :nodoc:
+      def self.is_helper=(v : Bool);  @@is_helper = v; end
+      # :nodoc:
+      def self.is_helper : Bool;       @@is_helper;     end
+      # :nodoc:
+      def self.helper_fd=(v : Int32);  @@helper_fd = v; end
+      # :nodoc:
+      def self.helper_fd : Int32;      @@helper_fd;     end
+      # :nodoc:
+      def self.client_fd=(v : Int32);  @@client_fd = v; end
+      # :nodoc:
+      def self.client_fd : Int32;      @@client_fd;     end
+      # :nodoc:
+      def self.pd=(v : FreeBSD::Capsicum::ProcessDescriptor?);  @@pd = v; end
+      # :nodoc:
+      def self.pd : FreeBSD::Capsicum::ProcessDescriptor?;       @@pd;     end
+      # :nodoc:
+      def self._register_client(name : String, c : Client(Codec::NVList)) : Nil
+        @@_clients[name] = c
+      end
+      # :nodoc:
+      def self._clients : Hash(String, Client(Codec::NVList))
+        @@_clients
+      end
+    {% end %}
+
+    # Install a privileged helper process using `pdfork(2)`.
+    #
+    # Call at the **top level** of your program (outside any method). The macro
+    # injects a `Crystal.main_user_code` override that forks the helper before
+    # the Crystal runtime starts, then initialises the runtime independently in
+    # both the helper child and the client parent.
+    #
+    # The block receives a `Server` and should call `server.serve { }` or
+    # `server.serve_typed` to handle requests. Full Crystal IO is available
+    # inside the block (unlike `spawn_early`).
+    #
+    # Install a privileged helper process using `pdfork(2)`.
+    #
+    # Call at the **top level** of your program (outside any method). The macro
+    # injects a `Crystal.main_user_code` override that forks the helper before
+    # the Crystal runtime starts, then initialises the runtime independently in
+    # both the helper child and the client parent.
+    #
+    # The block receives a `Server` and should call `server.serve { }` or
+    # `server.serve_typed` to handle requests. Full Crystal IO is available
+    # inside the block (unlike `spawn_early`). The child exits when serving ends.
+    #
+    # After `register`, retrieve the connected `Client` in the parent process
+    # via `FreeBSD::Casper::Helper.client`.
+    #
+    # ```crystal
+    # FreeBSD::Casper::Helper.register(name: "files") do |server|
+    #   server.serve do |op, payload|
+    #     case op
+    #     when "read" then File.read(String.new(payload)).to_slice
+    #     when "ping" then "pong".to_slice
+    #     else             raise "unknown op: #{op}"
+    #     end
+    #   end
+    # end
+    #
+    # client = FreeBSD::Casper::Helper.client(name: "files")
+    # FreeBSD::Capsicum.sandbox!
+    # String.new(client.request("ping"))  # => "pong"
+    # ```
+    macro register(name = "", &block)
+      {% if flag?(:freebsd) || flag?(:dragonfly) %}
+        def Crystal.main_user_code(argc : Int32, argv : UInt8**)
+          fds = uninitialized LibC::Int[2]
+          if LibC.socketpair(LibC::AF_UNIX, LibC::SOCK_STREAM, 0, fds) != 0
+            raise FreeBSD::Capsicum::Error.from_errno("socketpair")
+          end
+
+          FreeBSD::Casper::Helper.pd = FreeBSD::Capsicum.pdfork do
+            LibC.close(fds[0])
+            FreeBSD::Casper::Helper.helper_fd = fds[1]
+            FreeBSD::Casper::Helper.is_helper = true
+            previous_def
+            0
+          end
+
+          LibC.close(fds[1])
+          FreeBSD::Casper::Helper.client_fd = fds[0]
+          previous_def
+          FreeBSD::Casper::Helper._clients.each_value(&.close)
+          FreeBSD::Casper::Helper.pd.try { |p| p.wait; p.close }
+        end
+
+        if FreeBSD::Casper::Helper.is_helper
+          _helper_sock = UNIXSocket.new(fd: FreeBSD::Casper::Helper.helper_fd,
+                                        type: Socket::Type::STREAM)
+          {% unless name.empty? %}
+            LibC.setproctitle("- %s", (String.new(LibC.getprogname) + ".{{name.id}}").to_unsafe)
+          {% end %}
+          _server = FreeBSD::Casper::Helper::Server(FreeBSD::Casper::Codec::NVList).new(_helper_sock)
+          {{ block.args[0].id }} = _server
+          {{ block.body }}
+          _helper_sock.close
+          exit(0)
+        else
+          FreeBSD::Casper::Helper._register_client(
+            {{name}},
+            FreeBSD::Casper::Helper::Client(FreeBSD::Casper::Codec::NVList).new(
+              UNIXSocket.new(fd: FreeBSD::Casper::Helper.client_fd,
+                             type: Socket::Type::STREAM),
+              {{name}}))
+        end
+      {% end %}
+    end
+
+    # Returns the `Client` connected to the named registered helper.
+    # Only valid in the client (parent) process after `register(name:)` has run.
+    # Raises if no helper with the given name was registered.
+    {% if flag?(:freebsd) || flag?(:dragonfly) %}
+    def self.client(name : String) : Client(Codec::NVList)
+      @@_clients[name]? || raise "Helper.client: no helper registered as #{name.inspect}"
+    end
+    {% end %}
+
     # Fork a helper process that runs the block (server side). Returns a
     # `Client(Casper::Codec::NVList)` in the calling process. The forked
     # helper exits when the block returns.
@@ -102,6 +231,77 @@ module FreeBSD::Casper
     def self.spawn(codec : C.class, name : String = "", & : Server(C) ->) : Client(C) forall C
       do_spawn(codec, name) { |s| yield s }
     end
+
+    # Fork a helper via `pdfork(2)` before the Crystal runtime starts.
+    #
+    # Call this from a `Crystal.main_user_code` override **before** `previous_def`
+    # — i.e. before `__crystal_main` runs, while the event loop and fiber scheduler
+    # do not exist yet. Uses raw `LibC.socketpair` so no event-loop interaction
+    # happens before the fork, and `LibC._exit` in the child so GC finalizers
+    # don't run and corrupt the parent's state.
+    #
+    # **I/O in the helper block** must use blocking syscalls (`LibC.open` /
+    # `LibC.read` / `LibC.close`) rather than Crystal's IO abstractions.
+    # Crystal IO (`File.read`, `IO::FileDescriptor`, etc.) routes through the
+    # event loop, which doesn't exist in the child.
+    #
+    # Returns `{client, pd}` — a `Client` to make requests with and a
+    # `ProcessDescriptor` to wait on. Call `pd.wait; pd.close` after `previous_def`
+    # (once the runtime is up) to reap the helper.
+    #
+    # On FreeBSD/DragonFly the helper's process title is set to `progname.name`.
+    {% if flag?(:freebsd) || flag?(:dragonfly) %}
+    def self.spawn_early(name : String = "",
+                         & : Server(Codec::NVList) ->) : {Client(Codec::NVList), FreeBSD::Capsicum::ProcessDescriptor}
+      do_spawn_early(Codec::NVList, name) { |s| yield s }
+    end
+
+    # Fork a helper early with an explicit codec. See `#spawn_early` for details.
+    def self.spawn_early(codec : C.class, name : String = "",
+                         & : Server(C) ->) : {Client(C), FreeBSD::Capsicum::ProcessDescriptor} forall C
+      do_spawn_early(codec, name) { |s| yield s }
+    end
+
+    private def self.do_spawn_early(codec : C.class, name : String,
+                                    & : Server(C) ->) : {Client(C), FreeBSD::Capsicum::ProcessDescriptor} forall C
+      # Use raw socketpair(2) — UNIXSocket.pair touches the event loop which
+      # doesn't exist yet at this call site.
+      fds = uninitialized LibC::Int[2]
+      if LibC.socketpair(LibC::AF_UNIX, LibC::SOCK_STREAM, 0, fds) != 0
+        raise ::FreeBSD::Capsicum::Error.from_errno("socketpair")
+      end
+      client_fd = fds[0]
+      helper_fd = fds[1]
+
+      pd = FreeBSD::Capsicum.pdfork do
+        LibC.close(client_fd)
+        {% if flag?(:freebsd) || flag?(:dragonfly) %}
+          progname = String.new(LibC.getprogname)
+          title = name.empty? ? "#{progname}.helper" : "#{progname}.#{name}"
+          LibC.setproctitle("- %s", title.to_unsafe)
+        {% end %}
+        helper_sock = UNIXSocket.new(fd: helper_fd, type: Socket::Type::STREAM)
+        # Force blocking: the child has no event loop, so reads must block in-kernel.
+        Crystal::System::Socket.set_blocking(helper_fd, true)
+        server = Server(C).new(helper_sock)
+        begin
+          yield server
+        rescue ex
+          label = name.empty? ? "helper" : "helper[#{name}]"
+          STDERR.puts "#{label}:"
+          ex.inspect_with_backtrace(STDERR)
+          STDERR.flush
+        ensure
+          helper_sock.close
+        end
+        0
+      end
+
+      LibC.close(helper_fd)
+      client_sock = UNIXSocket.new(fd: client_fd, type: Socket::Type::STREAM)
+      {Client(C).new(client_sock, name), pd}
+    end
+    {% end %}
 
     private def self.do_spawn(codec : C.class, name : String, & : Server(C) ->) : Client(C) forall C
       # UNIXSocket.pair — both ends are registered in the event loop so the

@@ -1,4 +1,5 @@
 require "../casper"
+require "./integrate/log"
 
 {% if flag?(:freebsd) || flag?(:dragonfly) %}
   @[Link("cap_syslog")]
@@ -167,5 +168,31 @@ module FreeBSD::Casper
 
   def self.uninstall_syslog : Nil
     @@syslog = nil
+  end
+
+  # Install the Casper `system.syslog` service, injecting a `Crystal.main_user_code`
+  # override. Arguments mirror `install_syslog!`.
+  #
+  # ```crystal
+  # require "freebsd/casper/syslog"
+  # require "freebsd/casper/integrate/log"
+  #
+  # FreeBSD::Casper.register_syslog(
+  #   ident: "myapp",
+  #   options: FreeBSD::Casper::Service::Syslog::LogOption::Pid,
+  #   facility: FreeBSD::Casper::Service::Syslog::Facility::Local0,
+  # )
+  #
+  # FreeBSD::Capsicum.sandbox!
+  # Log.setup(:info, FreeBSD::Casper::Log::SyslogBackend.new(FreeBSD::Casper.syslog!))
+  # Log.info { "ready" }
+  # ```
+  macro register_syslog(ident, options = FreeBSD::Casper::Service::Syslog::LogOption::None, facility = FreeBSD::Casper::Service::Syslog::Facility::User)
+    def Crystal.main_user_code(argc : Int32, argv : UInt8**)
+      \{% if flag?(:freebsd) || flag?(:dragonfly) %}
+        FreeBSD::Casper.install_syslog!({{ident}}, {{options}}, {{facility}})
+      \{% end %}
+      previous_def
+    end
   end
 end

@@ -127,4 +127,58 @@ module FreeBSD::Casper
       Service::Grp.new(service("system.grp"))
     end
   end
+
+  @@grp : Service::Grp? = nil
+
+  # The globally-installed Casper Grp service, if any.
+  def self.grp? : Service::Grp?
+    @@grp
+  end
+
+  def self.install_grp(service : Service::Grp) : Service::Grp
+    @@grp = service
+  end
+
+  # Open a Casper channel, take `system.grp`, install it globally, and close
+  # the channel. Returns the service. Call `#limit_groups` / `#limit_fields`
+  # / `#limit_cmds` on the returned service to narrow permissions before
+  # `FreeBSD::Capsicum.sandbox!`.
+  def self.install_grp! : Service::Grp
+    chan = Channel.open
+    svc = chan.grp
+    chan.close
+    install_grp(svc)
+  end
+
+  def self.uninstall_grp : Nil
+    @@grp = nil
+  end
+
+  # Install the Casper `system.grp` service, injecting a `Crystal.main_user_code`
+  # override. The block receives the `Service::Grp` instance for configuration
+  # (e.g. `limit_groups`, `limit_fields`, `limit_cmds`) before the runtime starts.
+  #
+  # ```crystal
+  # FreeBSD::Casper.register_grp do |grp|
+  #   grp.limit_groups(names: ["wheel", "nobody"])
+  # end
+  #
+  # FreeBSD::Capsicum.sandbox!
+  # FreeBSD::Casper.grp?.try(&.getgrgid(0_u32)).try(&.name)  # => "wheel"
+  # ```
+  macro register_grp(&block)
+    def Crystal.main_user_code(argc : Int32, argv : UInt8**)
+      \{% if flag?(:freebsd) || flag?(:dragonfly) %}
+        _chan = FreeBSD::Casper::Channel.open
+        _grp  = _chan.grp
+        {% if block %}
+          {{block.args[0].id}} = _grp
+          {{block.body}}
+        {% end %}
+        _chan.close
+        FreeBSD::Casper.install_grp(_grp)
+      \{% end %}
+      previous_def
+    end
+  end
 end

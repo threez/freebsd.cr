@@ -156,6 +156,18 @@ module FreeBSD::Capsicum
   # value (an `Int32`) becomes the process exit code; the block never returns.
   # In the parent, returns a `ProcessDescriptor` controlling the child.
   #
+  # **Must be called before the Crystal runtime is started** — i.e. from a
+  # `Crystal.main_user_code` override, before `previous_def` / `__crystal_main`
+  # runs. At that point fibers, the event loop, and the signal pipe do not exist
+  # yet, so there is nothing to reinitialise in the child. Calling `pdfork` after
+  # the runtime is running is unsafe: the child would inherit a live event loop,
+  # open kqueue/epoll descriptors, and GC state that cannot be safely reused.
+  #
+  # The child block may call `previous_def` to start the Crystal runtime inside
+  # the child too. In that case both processes get independent runtimes and the
+  # program body can use a flag (set before the fork) to distinguish helper from
+  # client. Return 0 from the block after `previous_def` returns.
+  #
   # When `daemon` is true the descriptor will NOT signal-kill the child on
   # close, mirroring `PD_DAEMON`. When `cloexec` is true the descriptor is
   # `O_CLOEXEC` (`PD_CLOEXEC`).
@@ -168,44 +180,9 @@ module FreeBSD::Capsicum
       flags |= LibPdfork::PD_DAEMON if daemon
       flags |= LibPdfork::PD_CLOEXEC if cloexec
 
-      # Mirror the safety wrappers Crystal's own Process.fork uses internally:
-      #
-      #   1. pthread_setcancelstate — prevent async thread cancellation during
-      #      the fork window, which would leave the process in an inconsistent
-      #      state.
-      #   2. block_signals — block all signals (except the GC stop-the-world
-      #      pair) so the child cannot relay parent-bound signals through the
-      #      signal pipe before its own handlers are in place.
-      #   3. after_fork_child_callbacks — reinitialize Crystal's event loop,
-      #      signal handlers, and RNG seeds in the child; equivalent to what
-      #      the stdlib does after LibC.fork.
-      #
-      # Note: lock_write from the stdlib guards platforms without O_CLOEXEC /
-      # dup3 / accept4 against fd-leak races during concurrent exec. FreeBSD
-      # has had all of those since 8.x, so the lock is a no-op there and we
-      # omit it.
-      LibC.pthread_setcancelstate(LibC::PTHREAD_CANCEL_DISABLE, out cancel_state)
-
-      newmask = uninitialized LibC::SigsetT
-      oldmask = uninitialized LibC::SigsetT
-      LibC.sigfillset(pointerof(newmask))
-      # Keep the GC's stop-the-world signals unblocked — masking them causes
-      # deadlocks (same reasoning as in Crystal's own block_signals helper).
-      LibC.sigdelset(pointerof(newmask), GC.sig_suspend.value)
-      LibC.sigdelset(pointerof(newmask), GC.sig_resume.value)
-      LibC.pthread_sigmask(LibC::SIG_SETMASK, pointerof(newmask), pointerof(oldmask))
-
       fd = 0
       pid = LibPdfork.pdfork(pointerof(fd), flags)
-      # Capture errno before any other syscall can clobber it.
       saved_errno = Errno.value
-
-      # Restore signal mask and cancellation state in the parent immediately
-      # after the fork. The child resets its own mask via after_fork_child_callbacks.
-      if pid != 0
-        LibC.pthread_sigmask(LibC::SIG_SETMASK, pointerof(oldmask), nil)
-        LibC.pthread_setcancelstate(cancel_state, nil)
-      end
 
       case pid
       when -1
@@ -213,7 +190,6 @@ module FreeBSD::Capsicum
         raise Error.from_errno("pdfork")
       when 0
         status = begin
-          ::Process.after_fork_child_callbacks.each(&.call)
           yield
         rescue ex
           STDERR.puts "freebsd/capsicum pdfork child:"
@@ -221,7 +197,7 @@ module FreeBSD::Capsicum
           STDERR.flush
           1
         end
-        exit(status)
+        LibC._exit(status)
       else
         ProcessDescriptor.new(fd, pid.to_i64)
       end

@@ -107,4 +107,57 @@ module FreeBSD::Casper
       Service::Sysctl.new(service("system.sysctl"))
     end
   end
+
+  @@sysctl : Service::Sysctl? = nil
+
+  # The globally-installed Casper Sysctl service, if any.
+  def self.sysctl? : Service::Sysctl?
+    @@sysctl
+  end
+
+  def self.install_sysctl(service : Service::Sysctl) : Service::Sysctl
+    @@sysctl = service
+  end
+
+  # Open a Casper channel, take `system.sysctl`, install it globally, and close
+  # the channel. Returns the service. Call `#limit` on the returned service to
+  # narrow permissions before `FreeBSD::Capsicum.sandbox!`.
+  def self.install_sysctl! : Service::Sysctl
+    chan = Channel.open
+    svc = chan.sysctl
+    chan.close
+    install_sysctl(svc)
+  end
+
+  def self.uninstall_sysctl : Nil
+    @@sysctl = nil
+  end
+
+  # Install the Casper `system.sysctl` service, injecting a `Crystal.main_user_code`
+  # override. The block receives the `Service::Sysctl` instance for configuration
+  # via `#limit` before the runtime starts.
+  #
+  # ```crystal
+  # FreeBSD::Casper.register_sysctl do |sys|
+  #   sys.limit({"kern.ostype" => FreeBSD::Casper::Service::Sysctl::Mode::Read})
+  # end
+  #
+  # FreeBSD::Capsicum.sandbox!
+  # FreeBSD::Casper.sysctl?.try(&.get_string("kern.ostype"))  # => "FreeBSD"
+  # ```
+  macro register_sysctl(&block)
+    def Crystal.main_user_code(argc : Int32, argv : UInt8**)
+      \{% if flag?(:freebsd) || flag?(:dragonfly) %}
+        _chan    = FreeBSD::Casper::Channel.open
+        _sysctl  = _chan.sysctl
+        {% if block %}
+          {{block.args[0].id}} = _sysctl
+          {{block.body}}
+        {% end %}
+        _chan.close
+        FreeBSD::Casper.install_sysctl(_sysctl)
+      \{% end %}
+      previous_def
+    end
+  end
 end

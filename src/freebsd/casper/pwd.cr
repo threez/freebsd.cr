@@ -130,4 +130,58 @@ module FreeBSD::Casper
       Service::Pwd.new(service("system.pwd"))
     end
   end
+
+  @@pwd : Service::Pwd? = nil
+
+  # The globally-installed Casper Pwd service, if any.
+  def self.pwd? : Service::Pwd?
+    @@pwd
+  end
+
+  def self.install_pwd(service : Service::Pwd) : Service::Pwd
+    @@pwd = service
+  end
+
+  # Open a Casper channel, take `system.pwd`, install it globally, and close
+  # the channel. Returns the service. Call `#limit_users` / `#limit_fields`
+  # / `#limit_cmds` on the returned service to narrow permissions before
+  # `FreeBSD::Capsicum.sandbox!`.
+  def self.install_pwd! : Service::Pwd
+    chan = Channel.open
+    svc = chan.pwd
+    chan.close
+    install_pwd(svc)
+  end
+
+  def self.uninstall_pwd : Nil
+    @@pwd = nil
+  end
+
+  # Install the Casper `system.pwd` service, injecting a `Crystal.main_user_code`
+  # override. The block receives the `Service::Pwd` instance for configuration
+  # (e.g. `limit_users`, `limit_fields`, `limit_cmds`) before the runtime starts.
+  #
+  # ```crystal
+  # FreeBSD::Casper.register_pwd do |pwd|
+  #   pwd.limit_users(names: ["root", "nobody"])
+  # end
+  #
+  # FreeBSD::Capsicum.sandbox!
+  # FreeBSD::Casper.pwd?.try(&.getpwnam("root")).try(&.shell)  # => "/bin/sh"
+  # ```
+  macro register_pwd(&block)
+    def Crystal.main_user_code(argc : Int32, argv : UInt8**)
+      \{% if flag?(:freebsd) || flag?(:dragonfly) %}
+        _chan = FreeBSD::Casper::Channel.open
+        _pwd  = _chan.pwd
+        {% if block %}
+          {{block.args[0].id}} = _pwd
+          {{block.body}}
+        {% end %}
+        _chan.close
+        FreeBSD::Casper.install_pwd(_pwd)
+      \{% end %}
+      previous_def
+    end
+  end
 end

@@ -46,43 +46,43 @@ f.puts "now we're confined"   # works — Write was retained
 # f.read would fail — Read was not granted
 ```
 
-## Delegate DNS to the Casper helper
+## Transparent `Socket` policy — DNS and connect via system.net
 
-```crystal
-require "freebsd/casper"
-
-chan = FreeBSD::Casper::Channel.open    # open BEFORE sandboxing
-dns  = chan.dns
-dns.limit_families(Socket::Family::INET, Socket::Family::INET6)
-chan.close                               # only `dns` is needed from here on
-
-FreeBSD::Capsicum.sandbox!
-
-dns.getaddrinfo("example.com").each do |a|
-  puts a.address
-end
-```
-
-## Transparent DNS — use the Crystal stdlib without changes
+`system.net` (`cap_net(3)`) handles both DNS resolution and policy-checked
+`connect`/`bind` in a single service. Use `Mode::Name2Addr | Mode::ConnectDNS`
+to allow cap_getaddrinfo and then cap_connect to any address it returned.
 
 `require "freebsd/casper/integrate/dns"` patches Crystal's `Socket::Addrinfo`
 so that every standard-library lookup — `TCPSocket.new("host", port)`, URI host
-resolution, `HTTP::Client.get`, `Socket.tcp`, … — silently routes through the
-Casper helper once a global DNS service has been installed. Without one, the
-ordinary `getaddrinfo(3)` path is taken, so the require is safe to load
-unconditionally.
+resolution, `HTTP::Client.get`, … — silently routes through the Net helper once
+it is installed. `require "freebsd/casper/integrate/net"` patches
+`Crystal::System::Socket` so connect/bind go through the helper too.
 
 ```crystal
 require "freebsd/casper"
+require "freebsd/casper/net"
 require "freebsd/casper/integrate/dns"
+require "freebsd/casper/integrate/net"
 require "http/client"
 
-FreeBSD::Casper.install_dns!   # opens the channel, takes system.dns, registers it
+chan = FreeBSD::Casper::Channel.open
+net  = chan.net
+
+net.limit(
+  FreeBSD::Casper::Service::Net::Mode::Name2Addr |
+  FreeBSD::Casper::Service::Net::Mode::ConnectDNS
+) do |b|
+  b.allow_name2addr("example.com", "80")
+end
+chan.close
+
+FreeBSD::Casper.install_net(net)
+Time::Location.local     # prime /etc/localtime before sandboxing
+
 FreeBSD::Capsicum.sandbox!
 
-# Plain stdlib — no Casper API in sight. The TCP connect's DNS lookup
-# now runs in the Casper helper, not in this sandboxed process.
-puts HTTP::Client.get("https://example.com").status_code
+# Plain stdlib — DNS and connect both go through the Casper helper.
+puts HTTP::Client.get("http://example.com").status_code
 ```
 
 ## Transparent `Socket` policy — restrict who you can connect/bind to
@@ -127,7 +127,7 @@ process. They speak a small length-prefixed wire protocol over a `UNIXSocket`
 pair. No `casperd` plugin `.so` required.
 
 On FreeBSD/DragonFly the helper's process title is set to `progname.name`
-(e.g. `myapp.calc`), matching the `system.dns` naming convention used by
+(e.g. `myapp.calc`), matching the `system.net` naming convention used by
 `casperd` service workers. Unnamed helpers use `progname.helper`.
 
 **Raw API** — useful when you need full control over op names and bytes:
@@ -187,6 +187,66 @@ typed dispatch raises `RemoteError` with message `"unknown op: <T.name>"`. A
 single `Client` is not internally multiplexed; wrap it in a queue if you need
 concurrent requests.
 
+**Pre-runtime helper via `pdfork`** — the safest pattern: fork before the Crystal
+runtime starts so neither child nor parent inherits a live event loop. The trick
+is that both sides call `previous_def` inside the fork, so each process gets its
+own fully-initialised runtime. The program body then checks a flag to decide
+whether to act as server or client. This lets the helper use plain Crystal IO
+(`File.read`, etc.) with no restrictions.
+
+```crystal
+require "socket"
+require "freebsd/casper/helper"
+
+module G
+  class_property is_helper = false
+  class_property helper_fd = -1
+  class_property client_fd = -1
+  class_property pd : FreeBSD::Capsicum::ProcessDescriptor?
+end
+
+def Crystal.main_user_code(argc : Int32, argv : UInt8**)
+  {% if flag?(:freebsd) %}
+    fds = uninitialized LibC::Int[2]
+    LibC.socketpair(LibC::AF_UNIX, LibC::SOCK_STREAM, 0, fds)
+
+    G.pd = FreeBSD::Capsicum.pdfork do
+      LibC.close(fds[0])
+      G.helper_fd = fds[1]
+      G.is_helper = true
+      previous_def    # child gets its own full runtime
+      0
+    end
+
+    LibC.close(fds[1])
+    G.client_fd = fds[0]
+  {% end %}
+  previous_def        # parent gets its own full runtime
+  {% if flag?(:freebsd) %}
+    G.pd.try { |p| p.wait; p.close }
+  {% end %}
+end
+
+# Program body — full runtime available in both processes.
+if G.is_helper
+  sock = UNIXSocket.new(fd: G.helper_fd, type: Socket::Type::STREAM)
+  FreeBSD::Casper::Helper::Server(FreeBSD::Casper::Codec::NVList).new(sock).serve do |op, payload|
+    case op
+    when "read" then File.read(String.new(payload)).to_slice  # plain Crystal IO
+    when "ping" then "pong".to_slice
+    else raise "unknown op: #{op}"
+    end
+  end
+else
+  client = FreeBSD::Casper::Helper::Client(FreeBSD::Casper::Codec::NVList).new(
+    UNIXSocket.new(fd: G.client_fd, type: Socket::Type::STREAM), "files")
+  FreeBSD::Capsicum.sandbox!
+  puts String.new(client.request("ping"))             # => "pong"
+  puts String.new(client.request("read", "/etc/hosts".to_slice))
+  client.close
+end
+```
+
 ## Crystal `Log` to syslog from a sandbox
 
 `require "freebsd/casper/integrate/log"` adds
@@ -210,7 +270,7 @@ FreeBSD::Capsicum.sandbox!
 Log.info { "ready to serve" }
 ```
 
-Unlike the DNS/file/net hooks this is *not* monkey-patching — it is a normal
+Unlike the file/net hooks this is *not* monkey-patching — it is a normal
 `Log::Backend` you opt into via `Log.setup`. The underlying
 `FreeBSD::Casper::Service::Syslog` (`openlog`/`syslog`/`closelog`/`log_mask=`)
 is also usable directly for code that doesn't go through Crystal's `Log`.
@@ -232,26 +292,35 @@ PID. The descriptor stays valid after `cap_enter` (capability mode wipes the
 PID namespace but not your fds), so the parent can `kill`/`close` the child
 from inside the sandbox — the canonical Capsicum privsep pattern.
 
+`FreeBSD::Capsicum.pdfork` **must be called before the Crystal runtime starts**
+— from a `Crystal.main_user_code` override, before `previous_def`. Forking
+after the runtime is up is unsafe: the child would inherit a live event loop
+and kqueue descriptors it cannot use.
+
+The child block can call `previous_def` itself to start a full Crystal runtime
+in the child too (see the pre-runtime helper section above for that pattern).
+For a minimal child that just does a fixed task and exits:
+
 ```crystal
 require "freebsd/casper"
 
-pd = FreeBSD::Capsicum.pdfork do
-  # Child: drop into the actual workload and sandbox.
-  FreeBSD::Capsicum.sandbox!
-  do_untrusted_work
-  0   # exit code
+def Crystal.main_user_code(argc : Int32, argv : UInt8**)
+  pd = FreeBSD::Capsicum.pdfork do
+    # Minimal child — no Crystal runtime. Use LibC syscalls only.
+    0   # exit code
+  end
+
+  previous_def    # parent's runtime starts here
+
+  # pd stays valid after sandbox!
+  pd.pid                          # global PID (logging only — unusable in cap mode)
+  pd.current_pid                  # nil once the kernel has reaped the child
+  pd.kill(Signal::TERM)
+  status = pd.wait                # blocks via kqueue/EVFILT_PROCDESC; works in cap mode
+  status.try(&.exit_code)         # => Int32?, just like Process::Status
+  pd.wait(500.milliseconds)       # => nil on timeout (child still running)
+  pd.close                        # SIGKILL + reap (unless created with daemon: true)
 end
-
-# Parent: can sandbox itself and still manage the child via the pd.
-FreeBSD::Capsicum.sandbox!
-
-pd.pid                          # global PID (logging only — unusable in cap mode)
-pd.current_pid                  # nil once the kernel has reaped the child
-pd.kill(Signal::TERM)
-status = pd.wait                # blocks via kqueue/EVFILT_PROCDESC; works in cap mode
-status.try(&.exit_code)         # => Int32?, just like Process::Status
-pd.wait(500.milliseconds)       # => nil on timeout (child still running)
-pd.close                        # SIGKILL + reap (unless created with daemon: true)
 ```
 
 Exceptions raised inside the child block are caught and logged to stderr; the
@@ -326,11 +395,11 @@ sys.get_string("kern.ostype")             # => "FreeBSD"
   `cap_ioctls_limit`, `cap_fcntls_limit`, process descriptors (`pdfork`,
   `pdgetpid`, `pdkill`).
 - libcasper core: `cap_init`, `cap_service_open`, `cap_clone`, `cap_close`.
-- Services: `system.dns`, `system.pwd`, `system.grp`, `system.sysctl`,
+- Services: `system.pwd`, `system.grp`, `system.sysctl`,
   `system.fileargs`, `system.net`, `system.syslog`.
 - Stdlib integrations:
   - `freebsd/casper/integrate/dns` — `Socket::Addrinfo.getaddrinfo` (covers
-    `TCPSocket`, `URI`, `HTTP::Client`).
+    `TCPSocket`, `URI`, `HTTP::Client`) routed through `system.net`.
   - `freebsd/casper/integrate/file` — `File.open`, `File.info?`, `File.exists?`,
     `File.real_path` for declared paths.
   - `freebsd/casper/integrate/net` — `Socket#bind`, `Socket#connect` enforce a

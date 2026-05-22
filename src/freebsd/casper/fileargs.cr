@@ -1,4 +1,5 @@
 require "../casper"
+require "./integrate/file"
 
 {% if flag?(:freebsd) || flag?(:dragonfly) %}
   @[Link("cap_fileargs")]
@@ -252,5 +253,30 @@ module FreeBSD::Casper
 
   def self.uninstall_fileargs : Nil
     @@fileargs = nil
+  end
+
+  # Install the Casper `system.fileargs` service, injecting a `Crystal.main_user_code`
+  # override. Arguments mirror `install_fileargs!`. Auto-requires `integrate/file`
+  # so declared paths are transparently routed through the helper.
+  #
+  # ```crystal
+  # require "freebsd/casper/fileargs"
+  #
+  # FreeBSD::Casper.register_fileargs(
+  #   ["/etc/hosts", "/etc/resolv.conf"],
+  #   flags: LibC::O_RDONLY,
+  #   fa_flags: FreeBSD::Casper::Service::FileArgs::OPEN | FreeBSD::Casper::Service::FileArgs::LSTAT,
+  # )
+  #
+  # FreeBSD::Capsicum.sandbox!
+  # File.read("/etc/hosts")   # works — routed through fileargs
+  # ```
+  macro register_fileargs(paths, flags = 0, mode = 0o644_u16, fa_flags = FreeBSD::Casper::Service::FileArgs::OPEN)
+    def Crystal.main_user_code(argc : Int32, argv : UInt8**)
+      \{% if flag?(:freebsd) || flag?(:dragonfly) %}
+        FreeBSD::Casper.install_fileargs!({{paths}}, flags: {{flags}}, mode: {{mode}}, fa_flags: {{fa_flags}})
+      \{% end %}
+      previous_def
+    end
   end
 end
