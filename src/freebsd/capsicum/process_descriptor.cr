@@ -189,6 +189,7 @@ module FreeBSD::Capsicum
         Errno.value = saved_errno
         raise Error.from_errno("pdfork")
       when 0
+        Process.after_fork_child_callbacks.each(&.call)
         status = begin
           yield
         rescue ex
