@@ -78,6 +78,14 @@ describe FreeBSD::Audit do
       end
     end
 
+    it_on_capsicum "Record.text accepts key=value named fields" do
+      next unless audit_running?
+      FreeBSD::Audit::Event.discard(test_event) do |r|
+        r.text(user: "admin", method: "POST", path: "/login")
+        r.write_failures.should eq(0)
+      end
+    end
+
     it_on_capsicum "Record.address accepts IPv4" do
       next unless audit_running?
       FreeBSD::Audit::Event.discard(test_event) do |r|

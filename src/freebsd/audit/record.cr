@@ -27,6 +27,16 @@ module FreeBSD::Audit
       {% end %}
     end
 
+    # Append a text token built from key=value pairs.
+    #
+    # ```
+    # r.text(user: "admin", method: "POST", path: "/login")
+    # # writes token: "user=admin method=POST path=/login"
+    # ```
+    def text(**fields) : Nil
+      text(fields.map { |k, v| "#{k}=#{v}" }.join(' '))
+    end
+
     # Append a subject token describing the process writing the record.
     #
     # Defaults to the current effective UID/GID and PID. Pass *terminal* as

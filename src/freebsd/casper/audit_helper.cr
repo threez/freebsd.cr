@@ -235,6 +235,16 @@ module FreeBSD::Casper
         @tokens << Token.text(message)
       end
 
+      # Append a text token built from key=value pairs.
+      #
+      # ```
+      # r.text(user: "admin", method: "POST", path: "/login")
+      # # writes token: "user=admin method=POST path=/login"
+      # ```
+      def text(**fields) : Nil
+        text(fields.map { |k, v| "#{k}=#{v}" }.join(' '))
+      end
+
       # Append a subject token. Defaults mirror `FreeBSD::Audit::Record#subject`.
       def subject(
         uid : UInt32 = {% if flag?(:freebsd) || flag?(:dragonfly) %}

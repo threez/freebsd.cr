@@ -178,6 +178,12 @@ describe FreeBSD::Casper::AuditHelper do
       tok.terminal.should eq("10.0.0.1")
     end
 
+    it_on_capsicum "text(**fields) builds key=value string" do
+      buf = FreeBSD::Casper::AuditHelper::TokenBuffer.new
+      buf.text(user: "admin", method: "POST")
+      buf.tokens.first.text.should eq("user=admin method=POST")
+    end
+
     it_on_capsicum "activity_id appends a text token" do
       buf = FreeBSD::Casper::AuditHelper::TokenBuffer.new
       buf.activity_id(1_u8, "Logon")
