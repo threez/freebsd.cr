@@ -99,6 +99,27 @@ module FreeBSD::Privdrop
     {% end %}
   end
 
+  # High-level privilege drop by username. Resolves *username* to uid/gid via
+  # `getpwnam(3)` and delegates to `drop(uid:, gid:, username:, ...)`.
+  #
+  # Must be called before entering a Capsicum sandbox — `getpwnam(3)` fails
+  # with ECAPMODE inside `cap_enter`.
+  #
+  # Raises `ArgumentError` when *username* is not found in the passwd database,
+  # or any error raised by `drop(uid:, gid:, ...)`.
+  def self.drop(username : String,
+                chroot : String? = nil,
+                scrub_env : Bool = true) : Nil
+    {% if flag?(:freebsd) || flag?(:dragonfly) %}
+      pw = LibC.getpwnam(username)
+      raise ArgumentError.new("user not found: #{username.inspect}") if pw.null?
+      drop(uid: pw.value.pw_uid, gid: pw.value.pw_gid,
+           username: username, chroot: chroot, scrub_env: scrub_env)
+    {% else %}
+      raise UnsupportedPlatformError.new
+    {% end %}
+  end
+
   # High-level privilege drop. Executes all steps in the mandatory safe order:
   #
   # 1. `init_groups(username, gid)` — if *username* given; else `clear_groups`.
