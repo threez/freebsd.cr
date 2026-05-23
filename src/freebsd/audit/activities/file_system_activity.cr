@@ -1,3 +1,14 @@
+# Audit activity values for OCSF class 1001 — File System Activity.
+#
+# Use with `FreeBSD::Audit::Event.write_activity`:
+#
+# ```crystal
+# FreeBSD::Audit::Event.write_activity(FreeBSD::Audit::FileSystemActivity::Activity::Create) do |r|
+#   r.subject
+#   r.text path: "/etc/passwd"
+#   r.return_success
+# end
+# ```
 module FreeBSD::Audit::FileSystemActivity
   # OCSF 1001 activity_id values for File System Activity events.
   enum Activity : UInt8

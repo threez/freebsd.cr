@@ -1,3 +1,14 @@
+# Audit activity values for OCSF class 1006 — Scheduled Job Activity.
+#
+# Use with `FreeBSD::Audit::Event.write_activity`:
+#
+# ```crystal
+# FreeBSD::Audit::Event.write_activity(FreeBSD::Audit::ScheduledJobActivity::Activity::Run) do |r|
+#   r.subject
+#   r.text job: "backup-db", schedule: "0 3 * * *"
+#   r.return_success
+# end
+# ```
 module FreeBSD::Audit::ScheduledJobActivity
   # OCSF 1006 activity_id values for Scheduled Job Activity events.
   enum Activity : UInt8

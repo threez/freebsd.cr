@@ -15,7 +15,7 @@
 #   r.subject uid: 80_u32
 #   r.text "username=admin method=POST path=/login"
 #   r.address "203.0.113.42"
-#   r.return_failure errno: Errno::EACCES.value.to_u32
+#   r.return_failure Errno::EACCES
 # end
 # ```
 module FreeBSD::Audit

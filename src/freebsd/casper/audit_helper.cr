@@ -1,5 +1,6 @@
 require "../casper"
 require "../audit"
+require "../audit/record_builder"
 require "./codec/nvlist"
 
 module FreeBSD::Casper
@@ -228,21 +229,13 @@ module FreeBSD::Casper
     # the caller's credentials.
     # -------------------------------------------------------------------------
     class TokenBuffer
+      include FreeBSD::Audit::AuditRecordBuilder
+
       getter tokens : Array(Token) = Array(Token).new
 
       # Append a text token.
       def text(message : String) : Nil
         @tokens << Token.text(message)
-      end
-
-      # Append a text token built from key=value pairs.
-      #
-      # ```
-      # r.text(user: "admin", method: "POST", path: "/login")
-      # # writes token: "user=admin method=POST path=/login"
-      # ```
-      def text(**fields) : Nil
-        text(fields.map { |k, v| "#{k}=#{v}" }.join(' '))
       end
 
       # Append a subject token. Defaults mirror `FreeBSD::Audit::Record#subject`.
@@ -280,15 +273,10 @@ module FreeBSD::Casper
         @tokens << Token.return_ok(ret)
       end
 
-      # Append a failure return token.
+      # Append a failure return token. For a well-typed constant use the
+      # `return_failure(Errno)` overload provided by `AuditRecordBuilder`.
       def return_failure(errno : UInt32 = 0_u32) : Nil
         @tokens << Token.return_fail(errno)
-      end
-
-      # Append an OCSF activity_id text token. Called automatically by
-      # `Event.write_activity` — rarely needed directly.
-      def activity_id(id : UInt8, name : String) : Nil
-        text("activity_id=#{id} activity=#{name}")
       end
     end
 
@@ -301,7 +289,7 @@ module FreeBSD::Casper
     module Event
       # Open an audit record for *event*, yield a `TokenBuffer` to build tokens,
       # then commit the record via the privileged helper.
-      def self.write(event : FreeBSD::Audit::AUE, strict : Bool = false, & : TokenBuffer ->) : Nil
+      def self.write(event : FreeBSD::Audit::AUE, & : TokenBuffer ->) : Nil
         send_request(event, write: true) { |buf| yield buf }
       end
 
@@ -313,8 +301,8 @@ module FreeBSD::Casper
 
       # Open an audit record for an OCSF activity, write the `activity_id`
       # token automatically, then commit via the helper.
-      def self.write_activity(activity : T, strict : Bool = false, & : TokenBuffer ->) : Nil forall T
-        write(activity.aue, strict: strict) do |buf|
+      def self.write_activity(activity : T, & : TokenBuffer ->) : Nil forall T
+        write(activity.aue) do |buf|
           buf.activity_id(activity.value, activity.to_s)
           yield buf
         end

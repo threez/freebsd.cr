@@ -1,3 +1,14 @@
+# Audit activity values for OCSF class 4001 — Network Activity.
+#
+# Use with `FreeBSD::Audit::Event.write_activity`:
+#
+# ```crystal
+# FreeBSD::Audit::Event.write_activity(FreeBSD::Audit::NetworkActivity::Activity::Refuse) do |r|
+#   r.subject
+#   r.address remote_ip
+#   r.return_failure Errno::EACCES
+# end
+# ```
 module FreeBSD::Audit::NetworkActivity
   # OCSF 4001 activity_id values for Network Activity events.
   enum Activity : UInt8

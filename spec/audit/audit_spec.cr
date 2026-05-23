@@ -111,6 +111,38 @@ describe FreeBSD::Audit do
       end
     end
 
+    it_on_capsicum "Record.address accepts Socket::IPAddress (IPv4)" do
+      next unless audit_running?
+      FreeBSD::Audit::Event.discard(test_event) do |r|
+        r.address Socket::IPAddress.new("10.0.0.1", 443)
+        r.write_failures.should eq(0)
+      end
+    end
+
+    it_on_capsicum "Record.address accepts Socket::IPAddress (IPv6)" do
+      next unless audit_running?
+      FreeBSD::Audit::Event.discard(test_event) do |r|
+        r.address Socket::IPAddress.new("::1", 8080)
+        r.write_failures.should eq(0)
+      end
+    end
+
+    it_on_capsicum "Record.return_failure accepts Errno constant" do
+      next unless audit_running?
+      FreeBSD::Audit::Event.discard(test_event) do |r|
+        r.return_failure Errno::EACCES
+        r.write_failures.should eq(0)
+      end
+    end
+
+    it_on_capsicum "Record.activity_id accepts a typed Activity value" do
+      next unless audit_running?
+      FreeBSD::Audit::Event.discard(test_event) do |r|
+        r.activity_id FreeBSD::Audit::Authentication::Activity::Logon
+        r.write_failures.should eq(0)
+      end
+    end
+
     it_on_capsicum "Record.subject accepts IPv4 terminal" do
       next unless audit_running?
       FreeBSD::Audit::Event.discard(test_event) do |r|

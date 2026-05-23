@@ -1,3 +1,15 @@
+# Audit activity values for OCSF class 3002 — Authentication.
+#
+# Use with `FreeBSD::Audit::Event.write_activity` or
+# `FreeBSD::Casper::AuditHelper::Event.write_activity`:
+#
+# ```crystal
+# FreeBSD::Audit::Event.write_activity(FreeBSD::Audit::Authentication::Activity::Logon) do |r|
+#   r.subject
+#   r.text user: "admin"
+#   r.return_success
+# end
+# ```
 module FreeBSD::Audit::Authentication
   # OCSF 3002 activity_id values for Authentication events.
   enum Activity : UInt8

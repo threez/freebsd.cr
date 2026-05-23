@@ -1,4 +1,5 @@
 require "socket"
+require "./record_builder"
 
 module FreeBSD::Audit
   # Builds tokens into an open audit record.
@@ -12,6 +13,8 @@ module FreeBSD::Audit
   # 3. `address` (from where)
   # 4. `return_success` / `return_failure` (outcome)
   class Record
+    include AuditRecordBuilder
+
     # Number of token write failures accumulated during this record.
     # Non-zero only when `strict: false` (the default).
     getter write_failures : Int32 = 0
@@ -25,16 +28,6 @@ module FreeBSD::Audit
       {% if flag?(:freebsd) || flag?(:dragonfly) %}
         write_token LibBsm.au_to_text(message)
       {% end %}
-    end
-
-    # Append a text token built from key=value pairs.
-    #
-    # ```
-    # r.text(user: "admin", method: "POST", path: "/login")
-    # # writes token: "user=admin method=POST path=/login"
-    # ```
-    def text(**fields) : Nil
-      text(fields.map { |k, v| "#{k}=#{v}" }.join(' '))
     end
 
     # Append a subject token describing the process writing the record.
@@ -85,16 +78,6 @@ module FreeBSD::Audit
       {% end %}
     end
 
-    # Append an OCSF activity_id token as a text token.
-    #
-    # Format: `activity_id=N activity=Name`
-    #
-    # This is called automatically by `Event.write_activity` — you rarely need
-    # to call it directly.
-    def activity_id(id : UInt8, name : String) : Nil
-      text("activity_id=#{id} activity=#{name}")
-    end
-
     # Append a return token indicating success.
     def return_success(ret : UInt32 = 0_u32) : Nil
       {% if flag?(:freebsd) || flag?(:dragonfly) %}
@@ -102,8 +85,9 @@ module FreeBSD::Audit
       {% end %}
     end
 
-    # Append a return token indicating failure. *errno* is the error code
-    # (e.g. `Errno::EACCES.value.to_u32`).
+    # Append a return token indicating failure. *errno* is the numeric error code.
+    # Prefer the `return_failure(Errno)` overload from `AuditRecordBuilder` when
+    # you have a typed constant: `r.return_failure(Errno::EACCES)`.
     def return_failure(errno : UInt32 = 0_u32) : Nil
       {% if flag?(:freebsd) || flag?(:dragonfly) %}
         write_token LibBsm.au_to_return32(1_u8, errno)

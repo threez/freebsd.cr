@@ -22,7 +22,7 @@ FreeBSD::Audit::Event.write_activity(FreeBSD::Audit::Authentication::Activity::L
   r.subject uid: 80_u32
   r.text "user=admin"
   r.address "203.0.113.42"
-  r.return_failure errno: Errno::EACCES.value.to_u32
+  r.return_failure Errno::EACCES
 end
 ```
 
@@ -103,7 +103,7 @@ FreeBSD::Audit::Event.write_activity(FreeBSD::Audit::HttpActivity::Activity::Ref
   r.subject
   r.text "path=/admin method=POST"
   r.address "198.51.100.4"
-  r.return_failure errno: Errno::EACCES.value.to_u32
+  r.return_failure Errno::EACCES
 end
 ```
 
@@ -125,8 +125,8 @@ end
 | `r.text(message)` | `text` | Arbitrary UTF-8 string |
 | `r.address(ip)` | `in_addr` / `in_addr_ex` | IPv4 or IPv6 string |
 | `r.return_success(ret: 0)` | `return32` status=0 | |
-| `r.return_failure(errno: 0)` | `return32` status=1 | Pass `Errno::EACCES.value.to_u32` etc. |
-| `r.activity_id(id, name)` | `text` | Written automatically by `write_activity` |
+| `r.return_failure(errno: 0)` | `return32` status=1 | Also accepts `Errno` directly: `r.return_failure(Errno::EACCES)` |
+| `r.activity_id(id, name)` | `text` | Written automatically by `write_activity`; also accepts a typed Activity value |
 
 Recommended token order: `subject` → `text` → `address` → `return_*`.
 

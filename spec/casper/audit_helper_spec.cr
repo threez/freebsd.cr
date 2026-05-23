@@ -189,6 +189,33 @@ describe FreeBSD::Casper::AuditHelper do
       buf.activity_id(1_u8, "Logon")
       buf.tokens.first.text.should eq("activity_id=1 activity=Logon")
     end
+
+    it_on_capsicum "address(Socket::IPAddress) extracts the IP string (IPv4)" do
+      buf = FreeBSD::Casper::AuditHelper::TokenBuffer.new
+      buf.address(Socket::IPAddress.new("10.0.0.1", 443))
+      buf.tokens.first.addr.should eq("10.0.0.1")
+    end
+
+    it_on_capsicum "address(Socket::IPAddress) extracts the IP string (IPv6)" do
+      buf = FreeBSD::Casper::AuditHelper::TokenBuffer.new
+      buf.address(Socket::IPAddress.new("::1", 8080))
+      buf.tokens.first.addr.should eq("::1")
+    end
+
+    it_on_capsicum "return_failure(Errno) maps errno value correctly" do
+      buf = FreeBSD::Casper::AuditHelper::TokenBuffer.new
+      buf.return_failure(Errno::EACCES)
+      tok = buf.tokens.first
+      tok.kind.should eq("return")
+      tok.status.should eq(1_u64)
+      tok.retval.should eq(Errno::EACCES.value.to_u64)
+    end
+
+    it_on_capsicum "activity_id(Activity) appends correct text token" do
+      buf = FreeBSD::Casper::AuditHelper::TokenBuffer.new
+      buf.activity_id(FreeBSD::Audit::Authentication::Activity::Logon)
+      buf.tokens.first.text.should eq("activity_id=1 activity=Logon")
+    end
   end
 
   # ---------------------------------------------------------------------------

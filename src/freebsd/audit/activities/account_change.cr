@@ -1,3 +1,14 @@
+# Audit activity values for OCSF class 3001 — Account Change.
+#
+# Use with `FreeBSD::Audit::Event.write_activity`:
+#
+# ```crystal
+# FreeBSD::Audit::Event.write_activity(FreeBSD::Audit::AccountChange::Activity::PasswordReset) do |r|
+#   r.subject
+#   r.text user: "alice"
+#   r.return_success
+# end
+# ```
 module FreeBSD::Audit::AccountChange
   # OCSF 3001 activity_id values for Account Change events.
   enum Activity : UInt8
