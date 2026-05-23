@@ -7,7 +7,8 @@ Crystal bindings for FreeBSD.
   sandboxing without the libcasper service framework.
 
 - **`freebsd/casper`** — [libcasper] services built on top of
-  `freebsd/capsicum`: DNS, file, net, syslog, pwd/grp/sysctl. Lets a sandboxed
+  `freebsd/capsicum`: DNS, file, net, syslog, pwd/grp/sysctl, and a
+  pure-Crystal audit helper for capsicum-safe BSM writes. Lets a sandboxed
   process delegate privileged work to a trusted helper. Includes transparent
   integrations for Crystal's stdlib (`Socket::Addrinfo`, `File`, `Log`).
 

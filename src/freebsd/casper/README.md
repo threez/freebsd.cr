@@ -247,6 +247,58 @@ else
 end
 ```
 
+## BSM audit writes from a sandbox — `freebsd/casper/audit_helper`
+
+`au_open(3)` returns -1 inside capability mode — the kernel audit pipe is
+unavailable there. `freebsd/casper/audit_helper` solves this with a
+`pdfork`-based helper that holds the audit pipe before the sandbox is entered
+and serves `AuditHelper::Request` messages over NVList.
+
+`AuditHelper::Event` mirrors the `FreeBSD::Audit::Event` API exactly — swap
+the module name and everything else is the same:
+
+```crystal
+require "freebsd/casper/audit_helper"
+
+FreeBSD::Casper.register_audit_helper   # top-level — forks helper before sandbox
+
+FreeBSD::Capsicum.sandbox!
+
+FreeBSD::Casper::AuditHelper::Event.write(FreeBSD::Audit::AUE::Authentication) do |r|
+  r.subject uid: LibC.getuid.to_u32
+  r.text "user=admin method=password"
+  r.address "203.0.113.42"
+  r.return_success
+end
+
+FreeBSD::Casper::AuditHelper::Event.write_activity(
+  FreeBSD::Audit::Authentication::Activity::Logon
+) do |r|
+  r.subject
+  r.text "user=admin"
+  r.return_success
+end
+
+# Dry-run — constructs tokens but discards the record (no live auditd needed).
+FreeBSD::Casper::AuditHelper::Event.discard(FreeBSD::Audit::AUE::Authentication) do |r|
+  r.text "test record"
+  r.return_success
+end
+```
+
+`register_audit_helper` injects a `Crystal.main_user_code` override (chained
+via `previous_def`, so it stacks with `register_syslog` etc.) that calls
+`pdfork` before `__crystal_main`, gives the helper its own full Crystal
+runtime, and installs the connected `Client` into
+`FreeBSD::Casper.audit_helper!` in the parent process.
+
+The helper replicates the `au_to_*` token-construction logic from
+`FreeBSD::Audit::Record` and mirrors its ownership contract: if `au_write`
+returns -1 (token not consumed), the token is freed with `au_free_token`.
+Credentials (`uid`, `egid`, `ruid`, `rgid`, `pid`) are captured in the
+sandboxed caller and transmitted to the helper, so audit records carry the
+caller's identity rather than the helper's.
+
 ## Crystal `Log` to syslog from a sandbox
 
 `require "freebsd/casper/integrate/log"` adds
@@ -292,10 +344,12 @@ PID. The descriptor stays valid after `cap_enter` (capability mode wipes the
 PID namespace but not your fds), so the parent can `kill`/`close` the child
 from inside the sandbox — the canonical Capsicum privsep pattern.
 
-`FreeBSD::Capsicum.pdfork` **must be called before the Crystal runtime starts**
-— from a `Crystal.main_user_code` override, before `previous_def`. Forking
-after the runtime is up is unsafe: the child would inherit a live event loop
-and kqueue descriptors it cannot use.
+`FreeBSD::Capsicum.pdfork` is safest when called **before the Crystal runtime
+starts** — from a `Crystal.main_user_code` override, before `previous_def` —
+because neither child nor parent inherits a live event loop. When called after
+the runtime has started the child reinitialises its event loop automatically
+(via `Process.after_fork_child_callbacks`), so `sleep`, timers, and sockets
+work, but GC state and open file descriptors are shared at the fork point.
 
 The child block can call `previous_def` itself to start a full Crystal runtime
 in the child too (see the pre-runtime helper section above for that pattern).
@@ -409,3 +463,5 @@ sys.get_string("kern.ostype")             # => "FreeBSD"
 - Pure-Crystal Casper-style helpers: `FreeBSD::Casper::Helper.spawn` for
   building your own trusted-parent / sandboxed-child pair when the shipped
   services don't fit.
+- `freebsd/casper/audit_helper` — capsicum-safe BSM audit writes via a
+  `pdfork`-based helper; `AuditHelper::Event` mirrors `FreeBSD::Audit::Event`.
