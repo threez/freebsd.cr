@@ -24,4 +24,10 @@
     # and is always included in the result.
     fun initgroups(name : LibC::Char*, basegid : LibC::GidT) : Int32
   end
+
+  # getpwnam(3) is not declared in Crystal's stdlib LibC (only getpwnam_r is).
+  # Declare it here so drop(username:) can resolve the passwd entry.
+  lib LibC
+    fun getpwnam(login : Char*) : Passwd*
+  end
 {% end %}
