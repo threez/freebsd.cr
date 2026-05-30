@@ -23,8 +23,8 @@ FreeBSD::Capsicum.sandbox!
 syslog = FreeBSD::Casper.syslog?.not_nil!
 Log.setup(:debug, FreeBSD::Casper::Log::SyslogBackend.new(syslog))
 
-Log.info  { "sandboxed — this message goes to syslog" }
-Log.warn  { "something worth noting" }
+Log.info { "sandboxed — this message goes to syslog" }
+Log.warn { "something worth noting" }
 Log.error { "something went wrong" }
 
 puts "Messages sent to syslog (check: sudo tail -f /var/log/messages)"

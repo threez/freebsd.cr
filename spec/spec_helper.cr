@@ -1,5 +1,6 @@
 require "spec"
 require "../src/freebsd/casper"
+require "../src/freebsd/pkg"
 
 # Skip examples that need a working Capsicum/libcasper when running on a
 # non-supporting platform. Use `it_on_capsicum "does X" do ... end` instead of
@@ -17,6 +18,51 @@ end
 # True iff the running OS supports Capsicum at all. Specs branch on this
 # directly when they want to vary expectations rather than skip.
 CAPSICUM_OS = {{ flag?(:freebsd) || flag?(:dragonfly) }}
+
+# Skip examples that need a working local package database.
+# Use `it_on_pkg "does X" do ... end` instead of the bare `it`.
+private def pkg_db_accessible? : Bool
+  {% if flag?(:freebsd) %}
+    File::Info.readable?("/var/db/pkg/local.sqlite")
+  {% else %}
+    false
+  {% end %}
+end
+
+private def pkg_db_writable? : Bool
+  {% if flag?(:freebsd) %}
+    File::Info.writable?("/var/db/pkg/local.sqlite")
+  {% else %}
+    false
+  {% end %}
+end
+
+PKG_DB          = pkg_db_accessible?
+PKG_DB_WRITABLE = pkg_db_writable?
+
+macro it_on_pkg(description, &block)
+  {% if flag?(:freebsd) %}
+    it {{ description }} do
+      next unless PKG_DB
+      {{ block.body }}
+    end
+  {% else %}
+    pending {{ description }} + " (requires FreeBSD)"
+  {% end %}
+end
+
+# Like `it_on_pkg` but also skips when the pkg database is not writable
+# (i.e. when not running as root or with appropriate permissions).
+macro it_on_pkg_write(description, &block)
+  {% if flag?(:freebsd) %}
+    it {{ description }} do
+      next unless PKG_DB && PKG_DB_WRITABLE
+      {{ block.body }}
+    end
+  {% else %}
+    pending {{ description }} + " (requires FreeBSD and write access to pkg database)"
+  {% end %}
+end
 
 # Run `block` in a forked child suitable for `FreeBSD::Capsicum.sandbox!` testing.
 #

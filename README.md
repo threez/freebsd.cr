@@ -1,6 +1,27 @@
 # freebsd
 
-Crystal bindings for FreeBSD.
+Crystal bindings for FreeBSD system libraries — opt-in by sub-library.
+
+Each sub-library is a separate require. `require "freebsd"` alone pulls in
+nothing but the `FreeBSD::VERSION` constant — no C libraries are linked until
+you explicitly require the sub-library you need:
+
+```crystal
+require "freebsd/pkg"       # libpkg — package management
+require "freebsd/capsicum"  # Capsicum — capability mode sandboxing
+require "freebsd/casper"    # libcasper — privilege-separated services
+require "freebsd/nvlist"    # libnv — named-value lists
+require "freebsd/privdrop"  # setuid/setgid/chroot helpers
+require "freebsd/audit"     # libbsm — BSM audit event writer
+```
+
+Mix and match only what your application needs.
+
+---
+
+- **`freebsd/pkg`** — [libpkg] package management. Query installed packages,
+  search repository catalogs, install/remove/upgrade packages via the jobs API,
+  manage annotations and locks, register event callbacks for progress reporting.
 
 - **`freebsd/capsicum`** — [Capsicum] kernel capability mode (`cap_enter`,
   fd rights, `pdfork` process descriptors). Use this alone when you only need
@@ -26,6 +47,7 @@ Crystal bindings for FreeBSD.
   with per-class activity enums and a `write_activity` API that resolves the
   event class automatically from the activity value.
 
+[libpkg]: https://man.freebsd.org/cgi/man.cgi?query=pkg
 [Capsicum]: https://www.cl.cam.ac.uk/research/security/capsicum/
 [libcasper]: https://man.freebsd.org/cgi/man.cgi?query=libcasper
 [libbsm]: https://man.freebsd.org/cgi/man.cgi?query=libbsm
@@ -51,6 +73,7 @@ then `shards install`.
 
 See each sub-library's README for full API documentation and examples:
 
+- [`freebsd/pkg`](src/freebsd/pkg.cr)
 - [`freebsd/capsicum`](src/freebsd/capsicum/README.md)
 - [`freebsd/casper`](src/freebsd/casper/README.md)
 - [`freebsd/nvlist`](src/freebsd/nvlist/README.md)
