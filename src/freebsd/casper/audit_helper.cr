@@ -13,10 +13,10 @@ module FreeBSD::Casper
   #
   # ## Usage
   #
-  # ```crystal
+  # ```
   # require "freebsd/casper/audit_helper"
   #
-  # FreeBSD::Casper.register_audit_helper   # top-level — forks helper pre-sandbox
+  # FreeBSD::Casper.register_audit_helper # top-level — forks helper pre-sandbox
   #
   # FreeBSD::Capsicum.sandbox!
   #
@@ -46,26 +46,26 @@ module FreeBSD::Casper
     # for scalars. The server casts to `UInt32` / `Int32` / `UInt8` as needed.
     # -------------------------------------------------------------------------
     struct Token
-      getter kind : String   # "text" | "subject" | "address" | "return"
+      getter kind : String # "text" | "subject" | "address" | "return"
 
       # "text" fields
       getter text : String?
 
       # "subject" fields — captured from the sandboxed caller so the helper
       # writes the caller's credentials, not its own.
-      getter uid      : UInt64?
-      getter egid     : UInt64?
-      getter ruid     : UInt64?
-      getter rgid     : UInt64?
-      getter pid      : UInt64?
-      getter session  : UInt64?
-      getter terminal : String?   # dotted IPv4 or colon-sep IPv6; nil = no terminal
+      getter uid : UInt64?
+      getter egid : UInt64?
+      getter ruid : UInt64?
+      getter rgid : UInt64?
+      getter pid : UInt64?
+      getter session : UInt64?
+      getter terminal : String? # dotted IPv4 or colon-sep IPv6; nil = no terminal
 
       # "address" fields
       getter addr : String?
 
       # "return" fields
-      getter status : UInt64?   # 0 = success, 1 = failure
+      getter status : UInt64? # 0 = success, 1 = failure
       getter retval : UInt64?
 
       def initialize(
@@ -87,7 +87,7 @@ module FreeBSD::Casper
       # Encode only the fields that are non-nil (plus the mandatory `kind`).
       # Skipping nil fields avoids null-typed nvlist entries that confuse
       # the string/number readers on decode.
-      def to_nvlist_fields(b : FreeBSD::NVList::Builder) : Nil
+      def to_nvlist_fields(b : FreeBSD::NVList::Builder) : Nil # ameba:disable Metrics/CyclomaticComplexity
         b.field("kind", @kind)
         b.field("text", @text) if @text
         b.field("uid", @uid) if @uid
@@ -112,18 +112,18 @@ module FreeBSD::Casper
 
       # Decode from a PullParser. Uses optional readers so absent fields yield nil.
       def initialize(pull : FreeBSD::NVList::PullParser)
-        @kind     = pull.read_string("kind")
-        @text     = pull.read_string?("text")
-        @uid      = pull.read_number?("uid")
-        @egid     = pull.read_number?("egid")
-        @ruid     = pull.read_number?("ruid")
-        @rgid     = pull.read_number?("rgid")
-        @pid      = pull.read_number?("pid")
-        @session  = pull.read_number?("session")
+        @kind = pull.read_string("kind")
+        @text = pull.read_string?("text")
+        @uid = pull.read_number?("uid")
+        @egid = pull.read_number?("egid")
+        @ruid = pull.read_number?("ruid")
+        @rgid = pull.read_number?("rgid")
+        @pid = pull.read_number?("pid")
+        @session = pull.read_number?("session")
         @terminal = pull.read_string?("terminal")
-        @addr     = pull.read_string?("addr")
-        @status   = pull.read_number?("status")
-        @retval   = pull.read_number?("retval")
+        @addr = pull.read_string?("addr")
+        @status = pull.read_number?("status")
+        @retval = pull.read_number?("retval")
       end
 
       # Named constructors -------------------------------------------------------
@@ -135,8 +135,8 @@ module FreeBSD::Casper
       def self.subject(uid : UInt64, egid : UInt64, ruid : UInt64, rgid : UInt64,
                        pid : UInt64, session : UInt64, terminal : String?) : self
         new(kind: "subject",
-            uid: uid, egid: egid, ruid: ruid, rgid: rgid,
-            pid: pid, session: session, terminal: terminal)
+          uid: uid, egid: egid, ruid: ruid, rgid: rgid,
+          pid: pid, session: session, terminal: terminal)
       end
 
       def self.address(addr : String) : self
@@ -160,9 +160,9 @@ module FreeBSD::Casper
     # blob is a packed Token nvlist produced by Codec::NVList.encode.
     # -------------------------------------------------------------------------
     struct Request
-      getter event  : UInt16
+      getter event : UInt16
       getter tokens : Array(Token)
-      getter write  : Bool   # true = AU_TO_WRITE, false = AU_TO_NO_WRITE
+      getter? write : Bool # true = AU_TO_WRITE, false = AU_TO_NO_WRITE
 
       def initialize(@event : UInt16, @tokens : Array(Token), @write : Bool)
       end
@@ -183,7 +183,7 @@ module FreeBSD::Casper
       def initialize(pull : FreeBSD::NVList::PullParser)
         @event = pull.read_number("event").to_u16
         @write = pull.read_bool("write")
-        count  = pull.read_number("count").to_i
+        count = pull.read_number("count").to_i
         @tokens = Array(Token).new(count) do |i|
           Casper::Codec::NVList.decode(pull.read_binary("t#{i}"), Token)
         end
@@ -194,7 +194,7 @@ module FreeBSD::Casper
     # Wire response
     # -------------------------------------------------------------------------
     struct Response
-      getter ok      : Bool
+      getter? ok : Bool
       getter message : String?
 
       def initialize(@ok : Bool, @message : String? = nil)
@@ -214,7 +214,7 @@ module FreeBSD::Casper
       end
 
       def initialize(pull : FreeBSD::NVList::PullParser)
-        @ok      = pull.read_bool("ok")
+        @ok = pull.read_bool("ok")
         @message = pull.read_string?("message")
       end
     end
@@ -241,10 +241,10 @@ module FreeBSD::Casper
       # Append a subject token. Defaults mirror `FreeBSD::Audit::Record#subject`.
       def subject(
         uid : UInt32 = {% if flag?(:freebsd) || flag?(:dragonfly) %}
-                         LibBsm.geteuid.to_u32
-                       {% else %}
-                         LibC.getuid.to_u32
-                       {% end %},
+          LibBsm.geteuid.to_u32
+        {% else %}
+          LibC.getuid.to_u32
+        {% end %},
         pid : Int32 = Process.pid.to_i32,
         session : UInt32 = 0_u32,
         terminal : String? = nil,
@@ -320,9 +320,9 @@ module FreeBSD::Casper
         client = FreeBSD::Casper.audit_helper!
         buf = TokenBuffer.new
         yield buf
-        req  = Request.new(event: event.value, tokens: buf.tokens, write: write)
+        req = Request.new(event: event.value, tokens: buf.tokens, write: write)
         resp = client.request(req, Response)
-        raise FreeBSD::Audit::SystemError.new(resp.message || "audit helper error") unless resp.ok
+        raise FreeBSD::Audit::SystemError.new(resp.message || "audit helper error") unless resp.ok?
       end
     end
   end
@@ -360,7 +360,7 @@ module FreeBSD::Casper
   # pdfork before the Crystal runtime starts. The helper handles
   # AuditHelper::Request messages by replaying the token list through libbsm.
   #
-  # ```crystal
+  # ```
   # require "freebsd/casper/audit_helper"
   #
   # FreeBSD::Casper.register_audit_helper
@@ -446,7 +446,7 @@ module FreeBSD::Casper
                   LibBsm.au_free_token(t)
                 end
               end
-              keep = req.write ? LibBsm::AU_TO_WRITE : LibBsm::AU_TO_NO_WRITE
+              keep = req.write? ? LibBsm::AU_TO_WRITE : LibBsm::AU_TO_NO_WRITE
               LibBsm.au_close(d, keep, req.event)
               FreeBSD::Casper::AuditHelper::Response.new(ok: true)
             end

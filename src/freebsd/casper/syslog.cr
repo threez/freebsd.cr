@@ -173,7 +173,7 @@ module FreeBSD::Casper
   # Install the Casper `system.syslog` service, injecting a `Crystal.main_user_code`
   # override. Arguments mirror `install_syslog!`.
   #
-  # ```crystal
+  # ```
   # require "freebsd/casper/syslog"
   # require "freebsd/casper/integrate/log"
   #

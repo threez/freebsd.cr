@@ -2,7 +2,7 @@
 #
 # Use with `FreeBSD::Audit::Event.write_activity`:
 #
-# ```crystal
+# ```
 # FreeBSD::Audit::Event.write_activity(FreeBSD::Audit::ApplicationLifecycle::Activity::Start) do |r|
 #   r.subject
 #   r.text app: "nginx", version: "1.25.3"

@@ -2,7 +2,7 @@
 #
 # Use with `FreeBSD::Audit::Event.write_activity`:
 #
-# ```crystal
+# ```
 # FreeBSD::Audit::Event.write_activity(FreeBSD::Audit::HttpActivity::Activity::Refuse) do |r|
 #   r.subject
 #   r.address remote_ip

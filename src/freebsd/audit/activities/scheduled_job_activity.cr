@@ -2,7 +2,7 @@
 #
 # Use with `FreeBSD::Audit::Event.write_activity`:
 #
-# ```crystal
+# ```
 # FreeBSD::Audit::Event.write_activity(FreeBSD::Audit::ScheduledJobActivity::Activity::Run) do |r|
 #   r.subject
 #   r.text job: "backup-db", schedule: "0 3 * * *"

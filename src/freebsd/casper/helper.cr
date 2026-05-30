@@ -88,29 +88,54 @@ module FreeBSD::Casper
       @@is_helper : Bool = false
       @@helper_fd : Int32 = -1
       @@client_fd : Int32 = -1
-      @@pd        : FreeBSD::Capsicum::ProcessDescriptor? = nil
-      @@_clients  : Hash(String, Client(Codec::NVList)) = Hash(String, Client(Codec::NVList)).new
+      @@pd : FreeBSD::Capsicum::ProcessDescriptor? = nil
+      @@_clients : Hash(String, Client(Codec::NVList)) = Hash(String, Client(Codec::NVList)).new
 
       # :nodoc:
-      def self.is_helper=(v : Bool);  @@is_helper = v; end
+      def self.is_helper=(v : Bool)
+        @@is_helper = v
+      end
+
       # :nodoc:
-      def self.is_helper : Bool;       @@is_helper;     end
+      def self.is_helper : Bool
+        @@is_helper
+      end
+
       # :nodoc:
-      def self.helper_fd=(v : Int32);  @@helper_fd = v; end
+      def self.helper_fd=(v : Int32)
+        @@helper_fd = v
+      end
+
       # :nodoc:
-      def self.helper_fd : Int32;      @@helper_fd;     end
+      def self.helper_fd : Int32
+        @@helper_fd
+      end
+
       # :nodoc:
-      def self.client_fd=(v : Int32);  @@client_fd = v; end
+      def self.client_fd=(v : Int32)
+        @@client_fd = v
+      end
+
       # :nodoc:
-      def self.client_fd : Int32;      @@client_fd;     end
+      def self.client_fd : Int32
+        @@client_fd
+      end
+
       # :nodoc:
-      def self.pd=(v : FreeBSD::Capsicum::ProcessDescriptor?);  @@pd = v; end
+      def self.pd=(v : FreeBSD::Capsicum::ProcessDescriptor?)
+        @@pd = v
+      end
+
       # :nodoc:
-      def self.pd : FreeBSD::Capsicum::ProcessDescriptor?;       @@pd;     end
+      def self.pd : FreeBSD::Capsicum::ProcessDescriptor?
+        @@pd
+      end
+
       # :nodoc:
       def self._register_client(name : String, c : Client(Codec::NVList)) : Nil
         @@_clients[name] = c
       end
+
       # :nodoc:
       def self._clients : Hash(String, Client(Codec::NVList))
         @@_clients
@@ -142,7 +167,7 @@ module FreeBSD::Casper
     # After `register`, retrieve the connected `Client` in the parent process
     # via `FreeBSD::Casper::Helper.client`.
     #
-    # ```crystal
+    # ```
     # FreeBSD::Casper::Helper.register(name: "files") do |server|
     #   server.serve do |op, payload|
     #     case op
@@ -155,7 +180,7 @@ module FreeBSD::Casper
     #
     # client = FreeBSD::Casper::Helper.client(name: "files")
     # FreeBSD::Capsicum.sandbox!
-    # String.new(client.request("ping"))  # => "pong"
+    # String.new(client.request("ping")) # => "pong"
     # ```
     macro register(name = "", &block)
       {% if flag?(:freebsd) || flag?(:dragonfly) %}
@@ -206,9 +231,9 @@ module FreeBSD::Casper
     # Only valid in the client (parent) process after `register(name:)` has run.
     # Raises if no helper with the given name was registered.
     {% if flag?(:freebsd) || flag?(:dragonfly) %}
-    def self.client(name : String) : Client(Codec::NVList)
-      @@_clients[name]? || raise "Helper.client: no helper registered as #{name.inspect}"
-    end
+      def self.client(name : String) : Client(Codec::NVList)
+        @@_clients[name]? || raise "Helper.client: no helper registered as #{name.inspect}"
+      end
     {% end %}
 
     # Fork a helper process that runs the block (server side). Returns a
@@ -220,7 +245,7 @@ module FreeBSD::Casper
     # the `system.dns` naming used by `casperd` workers. The name is also
     # available on the returned `Client#name` and appears in STDERR error output.
     def self.spawn(name : String = "", & : Server(Codec::NVList) ->) : Client(Codec::NVList)
-      do_spawn(Codec::NVList, name) { |s| yield s }
+      do_spawn(Codec::NVList, name) { |s| yield s } # ameba:disable Naming/BlockParameterName
     end
 
     # Fork a helper process using an explicit codec. Pass `codec: Casper::Codec::JSON`
@@ -229,7 +254,7 @@ module FreeBSD::Casper
     # The raw `serve`/`request(String, Bytes)` API is unaffected by the codec.
     # See `#spawn(name:)` for `name:` semantics.
     def self.spawn(codec : C.class, name : String = "", & : Server(C) ->) : Client(C) forall C
-      do_spawn(codec, name) { |s| yield s }
+      do_spawn(codec, name) { |s| yield s } # ameba:disable Naming/BlockParameterName
     end
 
     # Fork a helper via `pdfork(2)` before the Crystal runtime starts.
@@ -308,7 +333,7 @@ module FreeBSD::Casper
       # serve loop can use non-blocking IO normally after Process.fork.
       client_sock, helper_sock = UNIXSocket.pair
 
-      child_proc = Process.fork do
+      _child_proc = Process.fork do
         client_sock.close
         {% if flag?(:freebsd) || flag?(:dragonfly) %}
           progname = String.new(LibC.getprogname)

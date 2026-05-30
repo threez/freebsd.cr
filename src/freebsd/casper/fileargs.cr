@@ -259,7 +259,7 @@ module FreeBSD::Casper
   # override. Arguments mirror `install_fileargs!`. Auto-requires `integrate/file`
   # so declared paths are transparently routed through the helper.
   #
-  # ```crystal
+  # ```
   # require "freebsd/casper/fileargs"
   #
   # FreeBSD::Casper.register_fileargs(
@@ -269,7 +269,7 @@ module FreeBSD::Casper
   # )
   #
   # FreeBSD::Capsicum.sandbox!
-  # File.read("/etc/hosts")   # works — routed through fileargs
+  # File.read("/etc/hosts") # works — routed through fileargs
   # ```
   macro register_fileargs(paths, flags = 0, mode = 0o644_u16, fa_flags = FreeBSD::Casper::Service::FileArgs::OPEN)
     def Crystal.main_user_code(argc : Int32, argv : UInt8**)

@@ -114,7 +114,7 @@ module FreeBSD::Privdrop
       pw = LibC.getpwnam(username)
       raise ArgumentError.new("user not found: #{username.inspect}") if pw.null?
       drop(uid: pw.value.pw_uid, gid: pw.value.pw_gid,
-           username: username, chroot: chroot, scrub_env: scrub_env)
+        username: username, chroot: chroot, scrub_env: scrub_env)
     {% else %}
       raise UnsupportedPlatformError.new
     {% end %}

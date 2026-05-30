@@ -2,7 +2,7 @@
 #
 # Use with `FreeBSD::Audit::Event.write_activity`:
 #
-# ```crystal
+# ```
 # FreeBSD::Audit::Event.write_activity(FreeBSD::Audit::ApiActivity::Activity::Delete) do |r|
 #   r.subject
 #   r.text resource: "/api/v1/users/42", method: "DELETE"

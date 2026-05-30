@@ -2,7 +2,7 @@
 #
 # Use with `FreeBSD::Audit::Event.write_activity`:
 #
-# ```crystal
+# ```
 # FreeBSD::Audit::Event.write_activity(FreeBSD::Audit::FileSystemActivity::Activity::Create) do |r|
 #   r.subject
 #   r.text path: "/etc/passwd"

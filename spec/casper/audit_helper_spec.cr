@@ -112,7 +112,7 @@ describe FreeBSD::Casper::AuditHelper do
       LibNv.nvlist_destroy(nvl)
 
       req2.event.should eq(32768_u16)
-      req2.write.should be_false
+      req2.write?.should be_false
       req2.tokens.size.should eq(2)
       req2.tokens[0].kind.should eq("text")
       req2.tokens[0].text.should eq("spec token")
@@ -136,7 +136,7 @@ describe FreeBSD::Casper::AuditHelper do
       LibNv.nvlist_destroy(nvl)
 
       req2.tokens.should be_empty
-      req2.write.should be_true
+      req2.write?.should be_true
     end
   end
 
@@ -145,7 +145,7 @@ describe FreeBSD::Casper::AuditHelper do
       resp = FreeBSD::Casper::AuditHelper::Response.new(ok: true)
       bytes = FreeBSD::Casper::Codec::NVList.encode(resp)
       decoded = FreeBSD::Casper::Codec::NVList.decode(bytes, FreeBSD::Casper::AuditHelper::Response)
-      decoded.ok.should be_true
+      decoded.ok?.should be_true
       decoded.message.should be_nil
     end
 
@@ -153,7 +153,7 @@ describe FreeBSD::Casper::AuditHelper do
       resp = FreeBSD::Casper::AuditHelper::Response.new(ok: false, message: "au_open failed")
       bytes = FreeBSD::Casper::Codec::NVList.encode(resp)
       decoded = FreeBSD::Casper::Codec::NVList.decode(bytes, FreeBSD::Casper::AuditHelper::Response)
-      decoded.ok.should be_false
+      decoded.ok?.should be_false
       decoded.message.should eq("au_open failed")
     end
   end
@@ -260,7 +260,7 @@ describe FreeBSD::Casper::AuditHelper do
                 LibBsm.au_write(d, t)
               end
             end
-            keep = req.write ? LibBsm::AU_TO_WRITE : LibBsm::AU_TO_NO_WRITE
+            keep = req.write? ? LibBsm::AU_TO_WRITE : LibBsm::AU_TO_NO_WRITE
             LibBsm.au_close(d, keep, req.event)
             FreeBSD::Casper::AuditHelper::Response.new(ok: true)
           end

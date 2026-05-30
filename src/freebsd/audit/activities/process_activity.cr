@@ -2,7 +2,7 @@
 #
 # Use with `FreeBSD::Audit::Event.write_activity`:
 #
-# ```crystal
+# ```
 # FreeBSD::Audit::Event.write_activity(FreeBSD::Audit::ProcessActivity::Activity::Launch) do |r|
 #   r.subject
 #   r.text cmd: "/usr/bin/ssh", args: "-l root 10.0.0.1"

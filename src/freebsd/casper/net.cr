@@ -286,7 +286,7 @@ module FreeBSD::Casper
   # Call at the **top level** of your program (outside any method), before
   # `require`-ing any code that touches the event loop.
   #
-  # ```crystal
+  # ```
   # require "freebsd/casper/net"
   # require "freebsd/casper/integrate/dns"
   # require "freebsd/casper/integrate/net"
@@ -299,7 +299,7 @@ module FreeBSD::Casper
   # end
   #
   # FreeBSD::Capsicum.sandbox!
-  # HTTP::Client.get("http://example.com/")  # routed through the net helper
+  # HTTP::Client.get("http://example.com/") # routed through the net helper
   # ```
   macro register_net(mode, &block)
     def Crystal.main_user_code(argc : Int32, argv : UInt8**)

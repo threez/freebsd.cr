@@ -137,13 +137,13 @@ module FreeBSD::Casper
   # override. The block receives the `Service::Sysctl` instance for configuration
   # via `#limit` before the runtime starts.
   #
-  # ```crystal
+  # ```
   # FreeBSD::Casper.register_sysctl do |sys|
   #   sys.limit({"kern.ostype" => FreeBSD::Casper::Service::Sysctl::Mode::Read})
   # end
   #
   # FreeBSD::Capsicum.sandbox!
-  # FreeBSD::Casper.sysctl?.try(&.get_string("kern.ostype"))  # => "FreeBSD"
+  # FreeBSD::Casper.sysctl?.try(&.get_string("kern.ostype")) # => "FreeBSD"
   # ```
   macro register_sysctl(&block)
     def Crystal.main_user_code(argc : Int32, argv : UInt8**)

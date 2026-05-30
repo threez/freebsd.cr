@@ -158,13 +158,13 @@ module FreeBSD::Casper
   # override. The block receives the `Service::Grp` instance for configuration
   # (e.g. `limit_groups`, `limit_fields`, `limit_cmds`) before the runtime starts.
   #
-  # ```crystal
+  # ```
   # FreeBSD::Casper.register_grp do |grp|
   #   grp.limit_groups(names: ["wheel", "nobody"])
   # end
   #
   # FreeBSD::Capsicum.sandbox!
-  # FreeBSD::Casper.grp?.try(&.getgrgid(0_u32)).try(&.name)  # => "wheel"
+  # FreeBSD::Casper.grp?.try(&.getgrgid(0_u32)).try(&.name) # => "wheel"
   # ```
   macro register_grp(&block)
     def Crystal.main_user_code(argc : Int32, argv : UInt8**)

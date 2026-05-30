@@ -161,13 +161,13 @@ module FreeBSD::Casper
   # override. The block receives the `Service::Pwd` instance for configuration
   # (e.g. `limit_users`, `limit_fields`, `limit_cmds`) before the runtime starts.
   #
-  # ```crystal
+  # ```
   # FreeBSD::Casper.register_pwd do |pwd|
   #   pwd.limit_users(names: ["root", "nobody"])
   # end
   #
   # FreeBSD::Capsicum.sandbox!
-  # FreeBSD::Casper.pwd?.try(&.getpwnam("root")).try(&.shell)  # => "/bin/sh"
+  # FreeBSD::Casper.pwd?.try(&.getpwnam("root")).try(&.shell) # => "/bin/sh"
   # ```
   macro register_pwd(&block)
     def Crystal.main_user_code(argc : Int32, argv : UInt8**)

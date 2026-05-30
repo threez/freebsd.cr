@@ -2,7 +2,7 @@
 #
 # Use with `FreeBSD::Audit::Event.write_activity`:
 #
-# ```crystal
+# ```
 # FreeBSD::Audit::Event.write_activity(FreeBSD::Audit::DnsActivity::Activity::Query) do |r|
 #   r.subject
 #   r.text query: "example.com", type: "A"

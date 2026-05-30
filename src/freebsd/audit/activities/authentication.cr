@@ -3,7 +3,7 @@
 # Use with `FreeBSD::Audit::Event.write_activity` or
 # `FreeBSD::Casper::AuditHelper::Event.write_activity`:
 #
-# ```crystal
+# ```
 # FreeBSD::Audit::Event.write_activity(FreeBSD::Audit::Authentication::Activity::Logon) do |r|
 #   r.subject
 #   r.text user: "admin"

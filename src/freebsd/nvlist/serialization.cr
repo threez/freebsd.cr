@@ -77,7 +77,7 @@ module FreeBSD::NVList
                 {% elsif ivar_type <= Bytes? %}
                   @{{ ivar.name }} = pull.read_binary?({{ key }})
                 {% elsif ivar_type.nilable? %}
-                  {% non_nil = ivar_type.union_types.reject { |t| t == Nil }.first %}
+                  {% non_nil = ivar_type.union_types.reject { |type| type == Nil }.first %}
                   nested_pull = pull.read_nvlist?({{ key }})
                   @{{ ivar.name }} = nested_pull ? {{ non_nil }}.new(nested_pull) : nil
                 {% else %}

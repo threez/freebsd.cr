@@ -73,9 +73,9 @@ module FreeBSD::Audit
     # end
     # ```
     def self.write_activity(activity : T, strict : Bool = false, & : Record ->) : Nil forall T
-      write(activity.aue, strict: strict) do |r|
-        r.activity_id(activity.value, activity.to_s)
-        yield r
+      write(activity.aue, strict: strict) do |record|
+        record.activity_id(activity.value, activity.to_s)
+        yield record
       end
     end
 
@@ -85,9 +85,9 @@ module FreeBSD::Audit
     #
     # Useful for testing activity token construction without a live auditd.
     def self.discard_activity(activity : T, & : Record ->) : Nil forall T
-      discard(activity.aue) do |r|
-        r.activity_id(activity.value, activity.to_s)
-        yield r
+      discard(activity.aue) do |record|
+        record.activity_id(activity.value, activity.to_s)
+        yield record
       end
     end
   end
