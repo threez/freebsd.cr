@@ -57,6 +57,14 @@ Mix and match only what your application needs.
 > **Platform:** FreeBSD primary, DragonFlyBSD best-effort. On other platforms
 > the shard compiles cleanly but any call raises `UnsupportedPlatformError`.
 
+## Versioning
+
+Versions follow `<freebsd_major>.<minor>.<update>` — the first number tracks
+the FreeBSD major release the bindings target (e.g. `15.x.x` for FreeBSD 15),
+the second is a feature increment, and the third mirrors the FreeBSD update
+number of the release used during development (e.g. `15.0.0` = FreeBSD
+15.0-RELEASE).
+
 ## Installation
 
 Add to `shard.yml`:
