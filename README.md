@@ -61,9 +61,10 @@ Mix and match only what your application needs.
 
 Versions follow `<freebsd_major>.<minor>.<update>` — the first number tracks
 the FreeBSD major release the bindings target (e.g. `15.x.x` for FreeBSD 15),
-the second is a feature increment, and the third mirrors the FreeBSD update
-number of the release used during development (e.g. `15.0.0` = FreeBSD
-15.0-RELEASE).
+the second is a feature increment, and the third is this shard's own update
+counter (bug fixes, lint/tooling changes, etc.), not a FreeBSD point-release
+number. The initial release for a given FreeBSD major version starts at
+`<major>.0.0` (e.g. `15.0.0` = first release targeting FreeBSD 15.0-RELEASE).
 
 ## Installation
 

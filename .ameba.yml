@@ -1,0 +1,16 @@
+# Run `ameba --only Lint/NotNil` for details
+Lint/NotNil:
+  Description: Identifies usage of `not_nil!` calls
+  Excluded:
+  - spec/*
+  - spec/**/*
+  - examples/**/*
+  Enabled: true
+  Severity: Warning
+
+# Examples and specs use short, domain-specific block parameter names
+# (db, ev, r, p, etc.) for readability in demo/test code.
+Naming/BlockParameterName:
+  Excluded:
+  - examples/**/*
+  - spec/**/*

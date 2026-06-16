@@ -15,23 +15,23 @@ end
 describe FreeBSD::Pkg::Package do
   describe "string attributes" do
     it_on_pkg "name is non-empty" do
-      with_pkg_package { |pkg| pkg.name.should eq("pkg") }
+      with_pkg_package(&.name.should(eq("pkg")))
     end
 
     it_on_pkg "version is non-empty" do
-      with_pkg_package { |pkg| pkg.version.should_not be_empty }
+      with_pkg_package(&.version.should_not(be_empty))
     end
 
     it_on_pkg "origin is non-empty" do
-      with_pkg_package { |pkg| pkg.origin.should_not be_empty }
+      with_pkg_package(&.origin.should_not(be_empty))
     end
 
     it_on_pkg "prefix starts with /" do
-      with_pkg_package { |pkg| pkg.prefix.should start_with("/") }
+      with_pkg_package(&.prefix.should(start_with("/")))
     end
 
     it_on_pkg "abi is non-empty" do
-      with_pkg_package { |pkg| pkg.abi.should_not be_empty }
+      with_pkg_package(&.abi.should_not(be_empty))
     end
   end
 
@@ -47,21 +47,21 @@ describe FreeBSD::Pkg::Package do
 
   describe "boolean attributes" do
     it_on_pkg "automatic? is a Bool" do
-      with_pkg_package { |pkg| pkg.automatic?.should be_a(Bool) }
+      with_pkg_package(&.automatic?.should(be_a(Bool)))
     end
 
     it_on_pkg "locked? is a Bool" do
-      with_pkg_package { |pkg| pkg.locked?.should be_a(Bool) }
+      with_pkg_package(&.locked?.should(be_a(Bool)))
     end
 
     it_on_pkg "vital? is a Bool" do
-      with_pkg_package { |pkg| pkg.vital?.should be_a(Bool) }
+      with_pkg_package(&.vital?.should(be_a(Bool)))
     end
   end
 
   describe "#valid?" do
     it_on_pkg "returns a Bool" do
-      with_pkg_package { |pkg| pkg.valid?.should be_a(Bool) }
+      with_pkg_package(&.valid?.should(be_a(Bool)))
     end
   end
 

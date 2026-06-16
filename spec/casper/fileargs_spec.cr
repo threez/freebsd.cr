@@ -18,7 +18,7 @@ describe FreeBSD::Casper::Service::FileArgs do
       FreeBSD::Capsicum.sandbox!
       info = fa.lstat("/etc/hosts")
       info.should_not be_nil
-      info.try { |i| i.size.should be > 0 }
+      info.try(&.size.should(be > 0))
     end
   end
 
