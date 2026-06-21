@@ -353,9 +353,6 @@ module FreeBSD::Casper
     @@audit_helper = nil
   end
 
-  # Clear the inherited audit helper client when a helper child resets its Casper state.
-  on_reset { uninstall_audit_helper }
-
   # ---------------------------------------------------------------------------
   # register_audit_helper macro
   #

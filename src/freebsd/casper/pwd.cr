@@ -157,9 +157,6 @@ module FreeBSD::Casper
     @@pwd = nil
   end
 
-  # Clear the inherited pwd handle when a helper child resets its Casper state.
-  on_reset { uninstall_pwd }
-
   # Install the Casper `system.pwd` service, injecting a `Crystal.main_user_code`
   # override. The block receives the `Service::Pwd` instance for configuration
   # (e.g. `limit_users`, `limit_fields`, `limit_cmds`) before the runtime starts.

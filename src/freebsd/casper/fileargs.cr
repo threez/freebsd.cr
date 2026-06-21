@@ -255,9 +255,6 @@ module FreeBSD::Casper
     @@fileargs = nil
   end
 
-  # Clear the inherited fileargs handle when a helper child resets its Casper state.
-  on_reset { uninstall_fileargs }
-
   # Install the Casper `system.fileargs` service, injecting a `Crystal.main_user_code`
   # override. Arguments mirror `install_fileargs!`. Auto-requires `integrate/file`
   # so declared paths are transparently routed through the helper.

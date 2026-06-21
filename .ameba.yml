@@ -14,3 +14,9 @@ Naming/BlockParameterName:
   Excluded:
   - examples/**/*
   - spec/**/*
+
+# Spec fixtures are standalone programs compiled and run by a spec, not specs
+# themselves, so they don't carry the `_spec` suffix.
+Lint/SpecFilename:
+  Excluded:
+  - spec/**/fixtures/**/*

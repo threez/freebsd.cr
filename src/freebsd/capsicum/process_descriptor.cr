@@ -189,7 +189,22 @@ module FreeBSD::Capsicum
         Errno.value = saved_errno
         raise Error.from_errno("pdfork")
       when 0
-        Process.after_fork_child_callbacks.each(&.call)
+        # Reinitialise the inherited event loop / signal handling in the child —
+        # but ONLY if a live event loop actually exists. `pdfork` supports two
+        # call sites:
+        #
+        #   * Pre-runtime (from a `Crystal.main_user_code` override, the helper /
+        #     register pattern): the event loop has not been created yet, so there
+        #     is nothing to reinit. Running the callbacks here SIGSEGVs, because
+        #     the first one (`Crystal::EventLoop.current.after_fork`) lazily builds
+        #     a loop and then dereferences scheduler state that does not exist yet.
+        #   * Post-runtime (called from `__crystal_main`/app code): the child
+        #     inherits a live event loop and MUST reinit it, or event-loop calls
+        #     such as `sleep` fail in the child.
+        #
+        # `Crystal::EventLoop.current?` (non-lazy) is nil exactly in the
+        # pre-runtime case, which is the correct discriminator.
+        Process.after_fork_child_callbacks.each(&.call) unless Crystal::EventLoop.current?.nil?
         status = begin
           yield
         rescue ex

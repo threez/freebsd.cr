@@ -170,9 +170,6 @@ module FreeBSD::Casper
     @@syslog = nil
   end
 
-  # Clear the inherited syslog handle when a helper child resets its Casper state.
-  on_reset { uninstall_syslog }
-
   # Install the Casper `system.syslog` service, injecting a `Crystal.main_user_code`
   # override. Arguments mirror `install_syslog!`.
   #
