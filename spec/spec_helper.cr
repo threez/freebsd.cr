@@ -157,3 +157,8 @@ def in_sandbox_child(*, before_wait : (-> Nil)? = nil, &block : -> _) : Nil
     raise "sandbox child failed:\n#{msg}"
   end
 end
+
+# Absolute path to the `crystal` compiler, resolved once at spec load time —
+# *before* any test scrubs `ENV` (e.g. privdrop specs), so specs that compile a
+# fixture subprocess don't depend on `PATH` still being intact when they run.
+CRYSTAL_BIN = Process.find_executable("crystal") || "crystal"

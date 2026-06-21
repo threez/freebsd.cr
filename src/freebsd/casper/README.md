@@ -292,6 +292,11 @@ via `previous_def`, so it stacks with `register_syslog` etc.) that calls
 runtime, and installs the connected `Client` into
 `FreeBSD::Casper.audit_helper!` in the parent process.
 
+Helper children drop every Casper service handle they inherited from the parent
+(net, grp, pwd, sysctl, syslog, fileargs, audit) before running, so they never
+reuse a channel the parent owns. This makes `register_audit_helper` and the
+`register_*` service macros safe to combine in any order.
+
 The helper replicates the `au_to_*` token-construction logic from
 `FreeBSD::Audit::Record` and mirrors its ownership contract: if `au_write`
 returns -1 (token not consumed), the token is freed with `au_free_token`.

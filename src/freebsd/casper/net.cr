@@ -305,6 +305,10 @@ module FreeBSD::Casper
     def Crystal.main_user_code(argc : Int32, argv : UInt8**)
       \{% if flag?(:freebsd) || flag?(:dragonfly) %}
         unless FreeBSD::Casper::Helper.is_helper
+          # Register the reset hook in the PARENT, before any pdfork helper forks,
+          # so a helper child inherits a populated hook list and reset! drops the
+          # net handle the child would otherwise share with the parent (EDEADLK).
+          FreeBSD::Casper.on_reset { FreeBSD::Casper.uninstall_net }
           _chan = FreeBSD::Casper::Channel.open
           _net  = _chan.net
           _net.limit({{mode}}) {{block}}

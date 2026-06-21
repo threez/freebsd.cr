@@ -10,7 +10,7 @@ describe "FreeBSD::Capsicum.pdfork child runtime startup" do
     fixture = File.join(__DIR__, "fixtures", "pdfork_runtime_child.cr")
     bin = File.tempname("pdfork_runtime", "")
     begin
-      build = Process.run("crystal", ["build", fixture, "-o", bin],
+      build = Process.run(CRYSTAL_BIN, ["build", fixture, "-o", bin],
         output: Process::Redirect::Inherit, error: Process::Redirect::Inherit)
       build.success?.should be_true
 

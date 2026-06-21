@@ -173,6 +173,8 @@ module FreeBSD::Casper
     def Crystal.main_user_code(argc : Int32, argv : UInt8**)
       \{% if flag?(:freebsd) || flag?(:dragonfly) %}
         unless FreeBSD::Casper::Helper.is_helper
+          # Register the reset hook in the parent before any pdfork (see net.cr).
+          FreeBSD::Casper.on_reset { FreeBSD::Casper.uninstall_pwd }
           _chan = FreeBSD::Casper::Channel.open
           _pwd  = _chan.pwd
           {% if block %}

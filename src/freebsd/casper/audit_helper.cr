@@ -466,6 +466,8 @@ module FreeBSD::Casper
     # Helper.register's main_user_code closes _clients after previous_def returns.
     \{% if flag?(:freebsd) || flag?(:dragonfly) %}
       unless FreeBSD::Casper::Helper.is_helper
+        # Drop the inherited audit-helper client in any runtime-spawned helper child.
+        FreeBSD::Casper.on_reset { FreeBSD::Casper.uninstall_audit_helper }
         FreeBSD::Casper.install_audit_helper(
           FreeBSD::Casper::Helper.client({{name}})
         )

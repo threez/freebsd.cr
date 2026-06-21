@@ -9,6 +9,32 @@ require "./codec/nvlist"
 {% end %}
 
 module FreeBSD::Casper
+  # Registry of service-handle reset callbacks. Each `register_*` service macro
+  # registers its `uninstall_*` here (in the parent, before any `pdfork`) so that
+  # a helper child can drop every Casper service handle it inherited from the
+  # parent before running the application body — a child must never reuse a
+  # `cap_channel_t` that belongs to the parent (contended use returns `EDEADLK`).
+  #
+  # Timing is the subtle part. `reset!` is invoked from a `pdfork` child's
+  # `main_user_code` block — i.e. *before* `__crystal_main`. A plain class-var
+  # initializer (`@@x = [] of ...`) only runs as part of `__crystal_main`, so it
+  # would still be unset at that point and iterating it SIGSEGVs (this is the
+  # exact bug that made the v15.0.4 registry crash). To be safe pre-runtime, the
+  # array is initialized **lazily** with `||=`, so both `on_reset` (called from a
+  # `register_*` override in the parent) and `reset!` (called from the child)
+  # always see a valid array regardless of whether `__crystal_main` has started.
+  @@_reset_hooks : Array(-> Nil)? = nil
+
+  # :nodoc:
+  def self.on_reset(&block : -> Nil) : Nil
+    (@@_reset_hooks ||= [] of -> Nil) << block
+  end
+
+  # :nodoc:
+  def self.reset! : Nil
+    (@@_reset_hooks ||= [] of -> Nil).each(&.call)
+  end
+
   # Custom FreeBSD::Casper-style privsep helpers, written in Crystal.
   #
   # `FreeBSD::Casper::Helper.spawn { |server| ... }` forks a trusted helper process
@@ -194,6 +220,10 @@ module FreeBSD::Casper
             LibC.close(fds[0])
             FreeBSD::Casper::Helper.helper_fd = fds[1]
             FreeBSD::Casper::Helper.is_helper = true
+            # Drop Casper service handles inherited from the parent so the child
+            # never reuses a channel the parent owns. Hooks were registered by
+            # each register_* override (in the parent) before this pdfork.
+            FreeBSD::Casper.reset!
             previous_def
             0
           end
@@ -304,6 +334,9 @@ module FreeBSD::Casper
           progname = String.new(LibC.getprogname)
           title = name.empty? ? "#{progname}.helper" : "#{progname}.#{name}"
           LibC.setproctitle("- %s", title.to_unsafe)
+          # Drop inherited Casper service handles so the serve block resolves via
+          # its own path, not a channel the parent owns.
+          FreeBSD::Casper.reset!
         {% end %}
         helper_sock = UNIXSocket.new(fd: helper_fd, type: Socket::Type::STREAM)
         # Force blocking: the child has no event loop, so reads must block in-kernel.
@@ -339,6 +372,9 @@ module FreeBSD::Casper
           progname = String.new(LibC.getprogname)
           title = name.empty? ? "#{progname}.helper" : "#{progname}.#{name}"
           LibC.setproctitle("- %s", title.to_unsafe)
+          # Drop inherited Casper service handles so the serve block resolves via
+          # its own path, not a channel the parent owns.
+          FreeBSD::Casper.reset!
         {% end %}
         server = Server(C).new(helper_sock)
         begin

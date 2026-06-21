@@ -274,7 +274,11 @@ module FreeBSD::Casper
   macro register_fileargs(paths, flags = 0, mode = 0o644_u16, fa_flags = FreeBSD::Casper::Service::FileArgs::OPEN)
     def Crystal.main_user_code(argc : Int32, argv : UInt8**)
       \{% if flag?(:freebsd) || flag?(:dragonfly) %}
-        FreeBSD::Casper.install_fileargs!({{paths}}, flags: {{flags}}, mode: {{mode}}, fa_flags: {{fa_flags}})
+        unless FreeBSD::Casper::Helper.is_helper
+          # Register the reset hook in the parent before any pdfork (see net.cr).
+          FreeBSD::Casper.on_reset { FreeBSD::Casper.uninstall_fileargs }
+          FreeBSD::Casper.install_fileargs!({{paths}}, flags: {{flags}}, mode: {{mode}}, fa_flags: {{fa_flags}})
+        end
       \{% end %}
       previous_def
     end
