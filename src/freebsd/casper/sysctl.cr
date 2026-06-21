@@ -148,14 +148,16 @@ module FreeBSD::Casper
   macro register_sysctl(&block)
     def Crystal.main_user_code(argc : Int32, argv : UInt8**)
       \{% if flag?(:freebsd) || flag?(:dragonfly) %}
-        _chan    = FreeBSD::Casper::Channel.open
-        _sysctl  = _chan.sysctl
-        {% if block %}
-          {{block.args[0].id}} = _sysctl
-          {{block.body}}
-        {% end %}
-        _chan.close
-        FreeBSD::Casper.install_sysctl(_sysctl)
+        unless FreeBSD::Casper::Helper.is_helper
+          _chan    = FreeBSD::Casper::Channel.open
+          _sysctl  = _chan.sysctl
+          {% if block %}
+            {{block.args[0].id}} = _sysctl
+            {{block.body}}
+          {% end %}
+          _chan.close
+          FreeBSD::Casper.install_sysctl(_sysctl)
+        end
       \{% end %}
       previous_def
     end

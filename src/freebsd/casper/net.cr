@@ -304,11 +304,13 @@ module FreeBSD::Casper
   macro register_net(mode, &block)
     def Crystal.main_user_code(argc : Int32, argv : UInt8**)
       \{% if flag?(:freebsd) || flag?(:dragonfly) %}
-        _chan = FreeBSD::Casper::Channel.open
-        _net  = _chan.net
-        _net.limit({{mode}}) {{block}}
-        _chan.close
-        FreeBSD::Casper.install_net(_net)
+        unless FreeBSD::Casper::Helper.is_helper
+          _chan = FreeBSD::Casper::Channel.open
+          _net  = _chan.net
+          _net.limit({{mode}}) {{block}}
+          _chan.close
+          FreeBSD::Casper.install_net(_net)
+        end
       \{% end %}
       previous_def
     end

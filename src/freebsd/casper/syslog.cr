@@ -190,7 +190,7 @@ module FreeBSD::Casper
   macro register_syslog(ident, options = FreeBSD::Casper::Service::Syslog::LogOption::None, facility = FreeBSD::Casper::Service::Syslog::Facility::User)
     def Crystal.main_user_code(argc : Int32, argv : UInt8**)
       \{% if flag?(:freebsd) || flag?(:dragonfly) %}
-        FreeBSD::Casper.install_syslog!({{ident}}, {{options}}, {{facility}})
+        FreeBSD::Casper.install_syslog!({{ident}}, {{options}}, {{facility}}) unless FreeBSD::Casper::Helper.is_helper
       \{% end %}
       previous_def
     end

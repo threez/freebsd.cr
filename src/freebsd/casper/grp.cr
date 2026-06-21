@@ -169,14 +169,16 @@ module FreeBSD::Casper
   macro register_grp(&block)
     def Crystal.main_user_code(argc : Int32, argv : UInt8**)
       \{% if flag?(:freebsd) || flag?(:dragonfly) %}
-        _chan = FreeBSD::Casper::Channel.open
-        _grp  = _chan.grp
-        {% if block %}
-          {{block.args[0].id}} = _grp
-          {{block.body}}
-        {% end %}
-        _chan.close
-        FreeBSD::Casper.install_grp(_grp)
+        unless FreeBSD::Casper::Helper.is_helper
+          _chan = FreeBSD::Casper::Channel.open
+          _grp  = _chan.grp
+          {% if block %}
+            {{block.args[0].id}} = _grp
+            {{block.body}}
+          {% end %}
+          _chan.close
+          FreeBSD::Casper.install_grp(_grp)
+        end
       \{% end %}
       previous_def
     end
