@@ -279,6 +279,9 @@ module FreeBSD::Casper
     @@net = nil
   end
 
+  # Clear the inherited net handle when a helper child resets its Casper state.
+  on_reset { uninstall_net }
+
   # Install the Casper `system.net` service with a policy limit, injecting
   # a `Crystal.main_user_code` override that runs before the Crystal runtime
   # starts. This is the ergonomic alternative to writing the override by hand.
@@ -301,6 +304,10 @@ module FreeBSD::Casper
   # FreeBSD::Capsicum.sandbox!
   # HTTP::Client.get("http://example.com/") # routed through the net helper
   # ```
+  #
+  # Composes safely with `FreeBSD::Casper::Helper.register` /
+  # `register_audit_helper` in **any order**: helper children drop the inherited
+  # net handle before running, so they never route through the parent's helper.
   macro register_net(mode, &block)
     def Crystal.main_user_code(argc : Int32, argv : UInt8**)
       \{% if flag?(:freebsd) || flag?(:dragonfly) %}

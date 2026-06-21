@@ -9,6 +9,29 @@ require "./codec/nvlist"
 {% end %}
 
 module FreeBSD::Casper
+  # Registry of service-handle reset callbacks. Each service file
+  # (`net.cr`, `grp.cr`, …) registers its `uninstall_*` here via `on_reset` when
+  # required. `reset!` runs them all to drop every installed service handle.
+  #
+  # This is the mechanism by which helper children shed the Casper service
+  # handles they inherited from the parent across a `pdfork`/`fork`: a child
+  # must never use a Casper channel that belongs to the parent's helper
+  # subprocess (it deadlocks with `EDEADLK`). Using a callback registry instead
+  # of calling `uninstall_*` directly avoids a require cycle — `helper.cr` is
+  # loaded before any service file, so the uninstall methods don't exist yet
+  # at this point.
+  @@_reset_hooks : Array(-> Nil) = [] of -> Nil
+
+  # :nodoc:
+  def self.on_reset(&block : -> Nil) : Nil
+    @@_reset_hooks << block
+  end
+
+  # :nodoc:
+  def self.reset! : Nil
+    @@_reset_hooks.each(&.call)
+  end
+
   # Custom FreeBSD::Casper-style privsep helpers, written in Crystal.
   #
   # `FreeBSD::Casper::Helper.spawn { |server| ... }` forks a trusted helper process
@@ -167,6 +190,12 @@ module FreeBSD::Casper
     # After `register`, retrieve the connected `Client` in the parent process
     # via `FreeBSD::Casper::Helper.client`.
     #
+    # Helper children automatically drop every Casper service handle they
+    # inherited from the parent (net, grp, pwd, sysctl, syslog, fileargs, audit)
+    # before running, so they never reuse the parent's helper channels. As a
+    # result `register` / `register_audit_helper` and the `register_*` service
+    # macros may be combined in **any order** without crashing.
+    #
     # ```
     # FreeBSD::Casper::Helper.register(name: "files") do |server|
     #   server.serve do |op, payload|
@@ -194,6 +223,11 @@ module FreeBSD::Casper
             LibC.close(fds[0])
             FreeBSD::Casper::Helper.helper_fd = fds[1]
             FreeBSD::Casper::Helper.is_helper = true
+            # Drop Casper service handles inherited from the parent — the child
+            # must not reuse the parent's helper channels (deadlocks). This is
+            # what makes register_* ordering irrelevant: whatever the parent
+            # installed before the pdfork is cleared here.
+            FreeBSD::Casper.reset!
             previous_def
             0
           end
@@ -308,6 +342,9 @@ module FreeBSD::Casper
         helper_sock = UNIXSocket.new(fd: helper_fd, type: Socket::Type::STREAM)
         # Force blocking: the child has no event loop, so reads must block in-kernel.
         Crystal::System::Socket.set_blocking(helper_fd, true)
+        # Drop inherited Casper service handles so the serve block resolves via
+        # its own path rather than the parent's helper channel.
+        FreeBSD::Casper.reset!
         server = Server(C).new(helper_sock)
         begin
           yield server
@@ -339,6 +376,9 @@ module FreeBSD::Casper
           progname = String.new(LibC.getprogname)
           title = name.empty? ? "#{progname}.helper" : "#{progname}.#{name}"
           LibC.setproctitle("- %s", title.to_unsafe)
+          # Drop inherited Casper service handles so the serve block resolves via
+          # its own path rather than the parent's helper channel.
+          FreeBSD::Casper.reset!
         {% end %}
         server = Server(C).new(helper_sock)
         begin

@@ -133,6 +133,9 @@ module FreeBSD::Casper
     @@sysctl = nil
   end
 
+  # Clear the inherited sysctl handle when a helper child resets its Casper state.
+  on_reset { uninstall_sysctl }
+
   # Install the Casper `system.sysctl` service, injecting a `Crystal.main_user_code`
   # override. The block receives the `Service::Sysctl` instance for configuration
   # via `#limit` before the runtime starts.

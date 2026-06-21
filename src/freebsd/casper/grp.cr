@@ -154,6 +154,9 @@ module FreeBSD::Casper
     @@grp = nil
   end
 
+  # Clear the inherited grp handle when a helper child resets its Casper state.
+  on_reset { uninstall_grp }
+
   # Install the Casper `system.grp` service, injecting a `Crystal.main_user_code`
   # override. The block receives the `Service::Grp` instance for configuration
   # (e.g. `limit_groups`, `limit_fields`, `limit_cmds`) before the runtime starts.
