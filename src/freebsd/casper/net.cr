@@ -302,21 +302,17 @@ module FreeBSD::Casper
   # HTTP::Client.get("http://example.com/") # routed through the net helper
   # ```
   macro register_net(mode, &block)
-    def Crystal.main_user_code(argc : Int32, argv : UInt8**)
-      \{% if flag?(:freebsd) || flag?(:dragonfly) %}
-        unless FreeBSD::Casper::Helper.is_helper
-          # Register the reset hook in the PARENT, before any pdfork helper forks,
-          # so a helper child inherits a populated hook list and reset! drops the
-          # net handle the child would otherwise share with the parent (EDEADLK).
-          FreeBSD::Casper.on_reset { FreeBSD::Casper.uninstall_net }
-          _chan = FreeBSD::Casper::Channel.open
-          _net  = _chan.net
-          _net.limit({{mode}}) {{block}}
-          _chan.close
-          FreeBSD::Casper.install_net(_net)
-        end
-      \{% end %}
-      previous_def
-    end
+    \{% if flag?(:freebsd) || flag?(:dragonfly) %}
+      # Open the channel, apply the limit, and install — a plain top-level call
+      # (the runtime is up). No `Crystal.main_user_code` override: `cap_init`'s
+      # internal fork is safe after the runtime starts, and keeping service setup
+      # out of the override chain is what prevents a pdfork helper child from ever
+      # running `cap_init` (the EDEADLK tangle).
+      _chan = FreeBSD::Casper::Channel.open
+      _net  = _chan.net
+      _net.limit({{mode}}) {{block}}
+      _chan.close
+      FreeBSD::Casper.install_net(_net)
+    \{% end %}
   end
 end

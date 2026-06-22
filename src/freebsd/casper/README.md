@@ -286,16 +286,22 @@ FreeBSD::Casper::AuditHelper::Event.discard(FreeBSD::Audit::AUE::Authentication)
 end
 ```
 
-`register_audit_helper` injects a `Crystal.main_user_code` override (chained
-via `previous_def`, so it stacks with `register_syslog` etc.) that calls
-`pdfork` before `__crystal_main`, gives the helper its own full Crystal
-runtime, and installs the connected `Client` into
-`FreeBSD::Casper.audit_helper!` in the parent process.
+`register_audit_helper` injects a `Crystal.main_user_code` override that calls
+`pdfork` before `__crystal_main`, gives the helper its own full Crystal runtime,
+and installs the connected `Client` into `FreeBSD::Casper.audit_helper!` in the
+parent process. It is the one macro that forks a privileged helper before the
+runtime starts.
 
-Helper children drop every Casper service handle they inherited from the parent
-(net, grp, pwd, sysctl, syslog, fileargs, audit) before running, so they never
-reuse a channel the parent owns. This makes `register_audit_helper` and the
-`register_*` service macros safe to combine in any order.
+The service macros (`register_net`, `register_grp`, `register_pwd`,
+`register_sysctl`, `register_syslog`, `register_fileargs`) do **not** use a
+`Crystal.main_user_code` override. They open the Casper channel and install the
+service with a plain top-level call (after the runtime has started) — the same
+`cap_init` + `cap_service_open` flow a C program uses. Because service setup is no
+longer in the `main_user_code`/`previous_def` chain, a `pdfork` helper child can
+never traverse it and open a Casper channel of its own (the cause of an earlier
+`EDEADLK` deadlock). Combine `register_audit_helper` with the `register_*` service
+macros freely; register the audit helper first so its pre-runtime `pdfork` happens
+before the service installs run.
 
 The helper replicates the `au_to_*` token-construction logic from
 `FreeBSD::Audit::Record` and mirrors its ownership contract: if `au_write`

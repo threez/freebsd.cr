@@ -146,22 +146,16 @@ module FreeBSD::Casper
   # FreeBSD::Casper.sysctl?.try(&.get_string("kern.ostype")) # => "FreeBSD"
   # ```
   macro register_sysctl(&block)
-    def Crystal.main_user_code(argc : Int32, argv : UInt8**)
-      \{% if flag?(:freebsd) || flag?(:dragonfly) %}
-        unless FreeBSD::Casper::Helper.is_helper
-          # Register the reset hook in the parent before any pdfork (see net.cr).
-          FreeBSD::Casper.on_reset { FreeBSD::Casper.uninstall_sysctl }
-          _chan    = FreeBSD::Casper::Channel.open
-          _sysctl  = _chan.sysctl
-          {% if block %}
-            {{block.args[0].id}} = _sysctl
-            {{block.body}}
-          {% end %}
-          _chan.close
-          FreeBSD::Casper.install_sysctl(_sysctl)
-        end
-      \{% end %}
-      previous_def
-    end
+    \{% if flag?(:freebsd) || flag?(:dragonfly) %}
+      # Plain top-level install (runtime up); no main_user_code override. See net.cr.
+      _chan    = FreeBSD::Casper::Channel.open
+      _sysctl  = _chan.sysctl
+      {% if block %}
+        {{block.args[0].id}} = _sysctl
+        {{block.body}}
+      {% end %}
+      _chan.close
+      FreeBSD::Casper.install_sysctl(_sysctl)
+    \{% end %}
   end
 end

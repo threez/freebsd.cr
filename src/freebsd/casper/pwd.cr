@@ -170,22 +170,16 @@ module FreeBSD::Casper
   # FreeBSD::Casper.pwd?.try(&.getpwnam("root")).try(&.shell) # => "/bin/sh"
   # ```
   macro register_pwd(&block)
-    def Crystal.main_user_code(argc : Int32, argv : UInt8**)
-      \{% if flag?(:freebsd) || flag?(:dragonfly) %}
-        unless FreeBSD::Casper::Helper.is_helper
-          # Register the reset hook in the parent before any pdfork (see net.cr).
-          FreeBSD::Casper.on_reset { FreeBSD::Casper.uninstall_pwd }
-          _chan = FreeBSD::Casper::Channel.open
-          _pwd  = _chan.pwd
-          {% if block %}
-            {{block.args[0].id}} = _pwd
-            {{block.body}}
-          {% end %}
-          _chan.close
-          FreeBSD::Casper.install_pwd(_pwd)
-        end
-      \{% end %}
-      previous_def
-    end
+    \{% if flag?(:freebsd) || flag?(:dragonfly) %}
+      # Plain top-level install (runtime up); no main_user_code override. See net.cr.
+      _chan = FreeBSD::Casper::Channel.open
+      _pwd  = _chan.pwd
+      {% if block %}
+        {{block.args[0].id}} = _pwd
+        {{block.body}}
+      {% end %}
+      _chan.close
+      FreeBSD::Casper.install_pwd(_pwd)
+    \{% end %}
   end
 end

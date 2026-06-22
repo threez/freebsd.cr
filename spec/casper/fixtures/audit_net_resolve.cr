@@ -1,11 +1,9 @@
-# Fixture for the "helper child must not inherit the parent's net channel"
-# regression. Combines register_audit_helper + register_net (the documented
-# combination) and resolves a hostname. The audit pdfork child must drop the
-# inherited @@net handle (via FreeBSD::Casper.reset!) before running the app
-# body, or it would contend on the parent's casper net channel (EDEADLK) — and
-# reset! must not itself crash when called pre-runtime in the child.
-#
-# The spec runs this and asserts the parent exits 0 and no process dumped core.
+# Fixture for the "register_audit_helper + register_net compose cleanly"
+# regression. The audit helper uses a pre-runtime pdfork; the net service is now
+# installed C-style at plain top level (no main_user_code override), so no helper
+# child can traverse a service override and run cap_init. The spec runs this and
+# asserts the parent exits 0, prints "net-installed"/"done", and no process
+# dumped core.
 
 require "../../../src/freebsd/casper"
 require "../../../src/freebsd/casper/audit_helper"

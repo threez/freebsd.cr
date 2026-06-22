@@ -188,15 +188,9 @@ module FreeBSD::Casper
   # Log.info { "ready" }
   # ```
   macro register_syslog(ident, options = FreeBSD::Casper::Service::Syslog::LogOption::None, facility = FreeBSD::Casper::Service::Syslog::Facility::User)
-    def Crystal.main_user_code(argc : Int32, argv : UInt8**)
-      \{% if flag?(:freebsd) || flag?(:dragonfly) %}
-        unless FreeBSD::Casper::Helper.is_helper
-          # Register the reset hook in the parent before any pdfork (see net.cr).
-          FreeBSD::Casper.on_reset { FreeBSD::Casper.uninstall_syslog }
-          FreeBSD::Casper.install_syslog!({{ident}}, {{options}}, {{facility}})
-        end
-      \{% end %}
-      previous_def
-    end
+    \{% if flag?(:freebsd) || flag?(:dragonfly) %}
+      # Plain top-level install (runtime up); no main_user_code override. See net.cr.
+      FreeBSD::Casper.install_syslog!({{ident}}, {{options}}, {{facility}})
+    \{% end %}
   end
 end
