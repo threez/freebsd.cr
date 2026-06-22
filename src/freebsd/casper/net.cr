@@ -303,16 +303,16 @@ module FreeBSD::Casper
   # ```
   macro register_net(mode, &block)
     \{% if flag?(:freebsd) || flag?(:dragonfly) %}
-      # Open the channel, apply the limit, and install — a plain top-level call
-      # (the runtime is up). No `Crystal.main_user_code` override: `cap_init`'s
-      # internal fork is safe after the runtime starts, and keeping service setup
-      # out of the override chain is what prevents a pdfork helper child from ever
-      # running `cap_init` (the EDEADLK tangle).
-      _chan = FreeBSD::Casper::Channel.open
-      _net  = _chan.net
-      _net.limit({{mode}}) {{block}}
-      _chan.close
-      FreeBSD::Casper.install_net(_net)
+      # Guard: helper children (pdfork'd before the runtime) must not call
+      # cap_init — they don't own the net channel and cap_init's internal fork
+      # would create a crossed channel pair → EDEADLK on the first getaddrinfo.
+      unless FreeBSD::Casper::Helper.is_helper
+        _chan = FreeBSD::Casper::Channel.open
+        _net  = _chan.net
+        _net.limit({{mode}}) {{block}}
+        _chan.close
+        FreeBSD::Casper.install_net(_net)
+      end
     \{% end %}
   end
 end
