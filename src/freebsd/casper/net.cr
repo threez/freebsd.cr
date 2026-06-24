@@ -73,6 +73,24 @@ module FreeBSD::Casper
       Connect             = 0x10
       Bind                = 0x20
       ConnectDNS          = 0x40
+
+      # Coerce a `Symbol`, a `Mode`, or an `Enumerable` of either into a single
+      # `Mode`. Symbols name members case-insensitively with `_` word separators
+      # (`:name2addr` → `Name2Addr`, `:connect_dns` → `ConnectDNS`); an array is
+      # OR-folded so `[:name2addr, :connect_dns]` replaces
+      # `Mode::Name2Addr | Mode::ConnectDNS`. Raises `ArgumentError` naming a bad
+      # symbol.
+      def self.from(value : Symbol | Mode) : Mode
+        case value
+        in Mode   then value
+        in Symbol then parse(value.to_s)
+        end
+      end
+
+      # :ditto:
+      def self.from(values : Enumerable(Symbol | Mode)) : Mode
+        values.reduce(Mode::None) { |acc, v| acc | from(v) }
+      end
     end
 
     # Connect `socket` to `addr` via the helper. Equivalent to `cap_connect(3)`.
@@ -152,15 +170,19 @@ module FreeBSD::Casper
     # returns, the limit is committed to the helper and takes effect for all
     # subsequent operations on this service.
     #
+    # `mode` may be a `Mode`, a `Symbol`, or an array of either (OR-folded);
+    # `[:connect, :bind]` is equivalent to `Mode::Connect | Mode::Bind`.
+    #
     # ```
-    # net.limit(Casper::Service::Net::Mode::Connect | Casper::Service::Net::Mode::Bind) do |b|
+    # net.limit([:connect, :bind]) do |b|
     #   b.allow_connect(Socket::IPAddress.new("127.0.0.1", 8080))
     #   b.allow_bind(Socket::IPAddress.new("0.0.0.0", 0))
     # end
     # ```
-    def limit(mode : Mode, & : LimitBuilder ->) : Nil
+    def limit(mode : Mode | Symbol | Enumerable(Symbol | Mode), & : LimitBuilder ->) : Nil
       {% if flag?(:freebsd) || flag?(:dragonfly) %}
         check_open!
+        mode = Mode.from(mode)
         handle = LibCapNet.cap_net_limit_init(@handle, mode.value)
         raise ::FreeBSD::Capsicum::Error.from_errno("cap_net_limit_init") if handle.null?
         committed = false
@@ -239,10 +261,59 @@ module FreeBSD::Casper
             raise ::FreeBSD::Capsicum::Error.from_errno("cap_net_limit_name2addr")
           end
         end
+
+        # Allow forward DNS + `connect(2)` for `host` on each of `ports`. This is
+        # the "let me reach this host" recipe: it adds an `allow_name2addr` per
+        # port, which — combined with `Mode::Name2Addr | Mode::ConnectDNS` on the
+        # `limit` call — permits `cap_getaddrinfo(host)` and then `cap_connect` to
+        # the addresses it returns. `ports` may be a single `Int`/`String` or an
+        # enumerable of them (`80`, `"443"`, `[80, 443]`).
+        def allow_connect_dns(host : String, ports : Int | String | Enumerable) : Nil
+          case ports
+          when Int, String
+            allow_name2addr(host, ports.to_s)
+          else
+            ports.each { |p| allow_name2addr(host, p.to_s) }
+          end
+        end
       {% else %}
         protected def initialize(@handle : Void*)
         end
+
+        def allow_connect_dns(host : String, ports : Int | String | Enumerable) : Nil
+          raise ::FreeBSD::Capsicum::UnsupportedPlatformError.new
+        end
       {% end %}
+    end
+
+    # Set up the "let me reach these hosts" policy in one call: applies the
+    # `Mode::Name2Addr | Mode::ConnectDNS` limit and allows forward DNS + connect
+    # for each given host/port. After this the sandboxed process can
+    # `cap_getaddrinfo` and `cap_connect` to the listed hosts (on the listed
+    # ports) and nothing else.
+    #
+    # ```
+    # net.connect_dns("example.com", 80)        # single host, single port
+    # net.connect_dns("example.com", [80, 443]) # single host, several ports
+    # ```
+    def connect_dns(host : String, ports : Int | String | Enumerable) : Nil
+      limit(Mode::Name2Addr | Mode::ConnectDNS) do |b|
+        b.allow_connect_dns(host, ports)
+      end
+    end
+
+    # Multi-host form. Each value is a single port or an enumerable of ports.
+    #
+    # ```
+    # net.connect_dns({
+    #   "example.com"     => 80,
+    #   "api.example.com" => [80, 443],
+    # })
+    # ```
+    def connect_dns(hosts : Hash(String, _)) : Nil
+      limit(Mode::Name2Addr | Mode::ConnectDNS) do |b|
+        hosts.each { |host, ports| b.allow_connect_dns(host, ports) }
+      end
     end
   end
 
@@ -291,10 +362,7 @@ module FreeBSD::Casper
   # require "freebsd/casper/integrate/dns"
   # require "freebsd/casper/integrate/net"
   #
-  # FreeBSD::Casper.register_net(
-  #   FreeBSD::Casper::Service::Net::Mode::Name2Addr |
-  #   FreeBSD::Casper::Service::Net::Mode::ConnectDNS
-  # ) do |b|
+  # FreeBSD::Casper.register_net([:name2addr, :connect_dns]) do |b|
   #   b.allow_name2addr("example.com", "80")
   # end
   #
@@ -310,6 +378,32 @@ module FreeBSD::Casper
         _chan = FreeBSD::Casper::Channel.open
         _net  = _chan.net
         _net.limit({{mode}}) {{block}}
+        _chan.close
+        FreeBSD::Casper.install_net(_net)
+      end
+    \{% end %}
+  end
+
+  # Install the `system.net` service with a "reach these hosts" policy in one
+  # call — the `connect_dns` shorthand for the common case. Accepts the same
+  # arguments as `Service::Net#connect_dns`: a single `host` + `ports`, or a
+  # `Hash` of host => ports. Like `register_net`, this opens and installs the
+  # service C-style at top level and is a no-op in a pdfork helper child.
+  #
+  # ```
+  # FreeBSD::Casper.register_connect_dns("example.com", 80)
+  # # or several:
+  # FreeBSD::Casper.register_connect_dns({"example.com" => 80, "api" => [80, 443]})
+  #
+  # FreeBSD::Capsicum.sandbox!
+  # HTTP::Client.get("http://example.com/") # routed through the net helper
+  # ```
+  macro register_connect_dns(*args)
+    \{% if flag?(:freebsd) || flag?(:dragonfly) %}
+      unless FreeBSD::Casper::Helper.is_helper
+        _chan = FreeBSD::Casper::Channel.open
+        _net  = _chan.net
+        _net.connect_dns({{ args.splat }})
         _chan.close
         FreeBSD::Casper.install_net(_net)
       end
