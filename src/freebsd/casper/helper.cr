@@ -84,61 +84,79 @@ module FreeBSD::Casper
 
     # Internal state threaded through the pdfork boundary.
     # These are set in main_user_code (before runtime) and read in __crystal_main.
+    #
+    # Multiple helpers compose: each `register` chains a `Crystal.main_user_code`
+    # override that pdforks a child. A child boots the runtime via `previous_def`,
+    # so it cannot serve from inside the fork closure (no event loop yet) — it must
+    # defer serving to a top-level block that runs once the runtime is up. To keep
+    # the *N* helpers' children apart, state is keyed per-registration:
+    #
+    #   * `@@active_helper` — set in the pdfork closure to the registration's name,
+    #     so each child knows *which* registration it is the helper for. The parent
+    #     leaves it `nil`. A top-level `register` block serves only when it matches.
+    #   * `@@helper_fds` / `@@client_fds` — the child/parent ends of each
+    #     registration's socketpair, keyed by name, so a later `register` cannot
+    #     clobber an earlier one's fd.
+    #   * `@@pds` — the parent's process descriptors, one per registration, all
+    #     waited/closed at exit.
     {% if flag?(:freebsd) || flag?(:dragonfly) %}
-      @@is_helper : Bool = false
-      @@helper_fd : Int32 = -1
-      @@client_fd : Int32 = -1
-      @@pd : FreeBSD::Capsicum::ProcessDescriptor? = nil
-      @@_clients : Hash(String, Client(Codec::NVList)) = Hash(String, Client(Codec::NVList)).new
+      # NOTE: the collection-valued state below is touched from `main_user_code`,
+      # which the runtime calls *before* `__crystal_main` — and class-var
+      # initializer expressions (`Hash.new`, `[] of …`) only run inside
+      # `__crystal_main`. Eagerly-initialized class vars would therefore be
+      # accessed before their initializer ran (a segfault on first write). So
+      # each is declared `nil` and lazily allocated through its accessor, which
+      # is safe whenever first touched — pre- or post-runtime. `active_helper`
+      # is a plain `String?` (compile-time nil) and needs no laziness.
+      @@active_helper : String? = nil
+      @@helper_fds : Hash(String, Int32)? = nil
+      @@client_fds : Hash(String, Int32)? = nil
+      @@pds : Array(FreeBSD::Capsicum::ProcessDescriptor)? = nil
+      @@_clients : Hash(String, Client(Codec::NVList))? = nil
 
       # :nodoc:
-      def self.is_helper=(v : Bool)
-        @@is_helper = v
+      # The name of the registration this process is the helper child for, or
+      # `nil` in the parent (client) process.
+      def self.active_helper=(v : String?)
+        @@active_helper = v
       end
 
       # :nodoc:
+      def self.active_helper : String?
+        @@active_helper
+      end
+
+      # :nodoc:
+      # True in any pdfork'd helper child (i.e. once `active_helper` is set).
+      # Casper service macros (`register_net`, …) guard on this to avoid running
+      # cap_init in a child that owns no Casper channel.
       def self.is_helper : Bool
-        @@is_helper
+        !@@active_helper.nil?
       end
 
       # :nodoc:
-      def self.helper_fd=(v : Int32)
-        @@helper_fd = v
+      def self.helper_fds : Hash(String, Int32)
+        @@helper_fds ||= Hash(String, Int32).new
       end
 
       # :nodoc:
-      def self.helper_fd : Int32
-        @@helper_fd
+      def self.client_fds : Hash(String, Int32)
+        @@client_fds ||= Hash(String, Int32).new
       end
 
       # :nodoc:
-      def self.client_fd=(v : Int32)
-        @@client_fd = v
-      end
-
-      # :nodoc:
-      def self.client_fd : Int32
-        @@client_fd
-      end
-
-      # :nodoc:
-      def self.pd=(v : FreeBSD::Capsicum::ProcessDescriptor?)
-        @@pd = v
-      end
-
-      # :nodoc:
-      def self.pd : FreeBSD::Capsicum::ProcessDescriptor?
-        @@pd
+      def self.pds : Array(FreeBSD::Capsicum::ProcessDescriptor)
+        @@pds ||= [] of FreeBSD::Capsicum::ProcessDescriptor
       end
 
       # :nodoc:
       def self._register_client(name : String, c : Client(Codec::NVList)) : Nil
-        @@_clients[name] = c
+        _clients[name] = c
       end
 
       # :nodoc:
       def self._clients : Hash(String, Client(Codec::NVList))
-        @@_clients
+        @@_clients ||= Hash(String, Client(Codec::NVList)).new
       end
     {% end %}
 
@@ -185,28 +203,50 @@ module FreeBSD::Casper
     macro register(name = "", &block)
       {% if flag?(:freebsd) || flag?(:dragonfly) %}
         def Crystal.main_user_code(argc : Int32, argv : UInt8**)
+          # Only the parent forks. A pdfork'd child (active_helper already set by
+          # an outer override) must NOT fork again — it just boots the runtime via
+          # previous_def and lets the chain unwind, so each registration produces
+          # exactly one child. Without this guard the first child would re-run the
+          # whole chain and fork a child per remaining registration.
+          if FreeBSD::Casper::Helper.active_helper
+            previous_def
+            return
+          end
+
           fds = uninitialized LibC::Int[2]
           if LibC.socketpair(LibC::AF_UNIX, LibC::SOCK_STREAM, 0, fds) != 0
             raise FreeBSD::Capsicum::Error.from_errno("socketpair")
           end
 
-          FreeBSD::Casper::Helper.pd = FreeBSD::Capsicum.pdfork do
+          pd = FreeBSD::Capsicum.pdfork do
             LibC.close(fds[0])
-            FreeBSD::Casper::Helper.helper_fd = fds[1]
-            FreeBSD::Casper::Helper.is_helper = true
+            FreeBSD::Casper::Helper.helper_fds[{{ name }}] = fds[1]
+            # Mark this process as *this* registration's helper child, then boot
+            # the runtime. The matching top-level block below serves the loop.
+            FreeBSD::Casper::Helper.active_helper = {{ name }}
             previous_def
             0
           end
 
           LibC.close(fds[1])
-          FreeBSD::Casper::Helper.client_fd = fds[0]
+          FreeBSD::Casper::Helper.client_fds[{{ name }}] = fds[0]
+          FreeBSD::Casper::Helper.pds << pd
           previous_def
-          FreeBSD::Casper::Helper._clients.each_value(&.close)
-          FreeBSD::Casper::Helper.pd.try { |p| p.wait; p.close }
+          # Parent cleanup, after the body returns. With N registrations this
+          # block is emitted once per frame and they share `_clients`/`pds`, so
+          # it must be idempotent: drain `pds` (each child waited/closed exactly
+          # once) and close each client only once. The outer frames then find
+          # both already empty/closed.
+          FreeBSD::Casper::Helper._clients.each_value { |c| c.close unless c.closed? }
+          while _pd = FreeBSD::Casper::Helper.pds.shift?
+            _pd.wait
+            _pd.close
+          end
         end
 
-        if FreeBSD::Casper::Helper.is_helper
-          _helper_sock = UNIXSocket.new(fd: FreeBSD::Casper::Helper.helper_fd,
+        if FreeBSD::Casper::Helper.active_helper == {{ name }}
+          # We are the child forked for this registration: serve its block.
+          _helper_sock = UNIXSocket.new(fd: FreeBSD::Casper::Helper.helper_fds[{{ name }}],
                                         type: Socket::Type::STREAM)
           {% unless name.empty? %}
             LibC.setproctitle("- %s", (String.new(LibC.getprogname) + ".{{name.id}}").to_unsafe)
@@ -216,14 +256,17 @@ module FreeBSD::Casper
           {{ block.body }}
           _helper_sock.close
           exit(0)
-        else
+        elsif FreeBSD::Casper::Helper.active_helper.nil?
+          # Parent process: connect a client to this registration's helper.
           FreeBSD::Casper::Helper._register_client(
             {{name}},
             FreeBSD::Casper::Helper::Client(FreeBSD::Casper::Codec::NVList).new(
-              UNIXSocket.new(fd: FreeBSD::Casper::Helper.client_fd,
+              UNIXSocket.new(fd: FreeBSD::Casper::Helper.client_fds[{{ name }}],
                              type: Socket::Type::STREAM),
               {{name}}))
         end
+        # A child whose active_helper != this name falls through: it is some other
+        # registration's helper and must not touch this one's socket.
       {% end %}
     end
 
@@ -232,7 +275,7 @@ module FreeBSD::Casper
     # Raises if no helper with the given name was registered.
     {% if flag?(:freebsd) || flag?(:dragonfly) %}
       def self.client(name : String) : Client(Codec::NVList)
-        @@_clients[name]? || raise "Helper.client: no helper registered as #{name.inspect}"
+        _clients[name]? || raise "Helper.client: no helper registered as #{name.inspect}"
       end
     {% end %}
 
