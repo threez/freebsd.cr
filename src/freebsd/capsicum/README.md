@@ -77,16 +77,31 @@ f.puts "now we're confined"   # works — Write was retained
 # f.read would fail — Read was not granted
 ```
 
-`Rights.of(io)` returns the current effective rights on an fd:
+Anywhere a `Right` is accepted you can pass a **symbol** naming it instead —
+`:write`, `:fstat`, `:kqueue_event` — so the above is also just:
+
+```crystal
+FreeBSD::Capsicum::Capability::Rights.new(:write, :fsync, :fstat).apply_to(f)
+```
+
+Symbols map to members case-insensitively with `_` word separators
+(`:seek_tell` → `SeekTell`); an unknown name raises `ArgumentError`. Symbols and
+`Right` constants can be mixed in one call. `Right.from(value)` performs the
+coercion directly.
+
+`Rights.of(io)` (or `Rights.of(fd : Int32)`) returns the current effective
+rights on an fd; `apply_to` likewise accepts either an `IO::FileDescriptor` or a
+raw `Int32` fd — use the fd form for a `Socket` (`rights.apply_to(server.fd)`),
+which is not an `IO::FileDescriptor`:
 
 ```crystal
 rights = FreeBSD::Capsicum::Capability::Rights.of(f)
-rights.includes?(FreeBSD::Capsicum::Capability::Right::Write)  # => true
+rights.includes?(:write)  # => true
 ```
 
 `Rights#clear(*rights)` removes individual rights from a set before applying
-it. `Rights#add_raw(Enumerable(UInt64))` lets you add rights that are not yet
-enumerated in `Right`.
+it (also symbol-aware). `Rights#add_raw(Enumerable(UInt64))` lets you add rights
+that are not yet enumerated in `Right`.
 
 ## Limit ioctl commands
 
