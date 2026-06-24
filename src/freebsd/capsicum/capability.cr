@@ -37,49 +37,63 @@ module FreeBSD::Capsicum
     @[Flags]
     enum Right : UInt64
       # Index 0 rights
-      Read        = (1_u64 << 57) | 0x0000000000000001_u64
-      Write       = (1_u64 << 57) | 0x0000000000000002_u64
-      SeekTell    = (1_u64 << 57) | 0x0000000000000004_u64
-      Seek        = (1_u64 << 57) | 0x000000000000000c_u64
-      Mmap        = (1_u64 << 57) | 0x0000000000000010_u64
-      MmapX       = (1_u64 << 57) | 0x0000000000000020_u64
-      Create      = (1_u64 << 57) | 0x0000000000000040_u64
-      Fexecve     = (1_u64 << 57) | 0x0000000000000080_u64
-      Fsync       = (1_u64 << 57) | 0x0000000000000100_u64
-      Ftruncate   = (1_u64 << 57) | 0x0000000000000200_u64
-      Lookup      = (1_u64 << 57) | 0x0000000000000400_u64
-      Fchdir      = (1_u64 << 57) | 0x0000000000000800_u64
-      Fchflags    = (1_u64 << 57) | 0x0000000000001000_u64
-      Fchmod      = (1_u64 << 57) | 0x0000000000002000_u64
-      Fchown      = (1_u64 << 57) | 0x0000000000004000_u64
-      Fcntl       = (1_u64 << 57) | 0x0000000000008000_u64
-      Flock       = (1_u64 << 57) | 0x0000000000010000_u64
-      Fpathconf   = (1_u64 << 57) | 0x0000000000020000_u64
-      Fsck        = (1_u64 << 57) | 0x0000000000040000_u64
-      Fstat       = (1_u64 << 57) | 0x0000000000080000_u64
-      Fstatfs     = (1_u64 << 57) | 0x0000000000100000_u64
-      Futimes     = (1_u64 << 57) | 0x0000000000200000_u64
-      Accept      = (1_u64 << 57) | 0x0020000000000000_u64
-      Bind        = (1_u64 << 57) | 0x0040000000000000_u64
-      Connect     = (1_u64 << 57) | 0x0080000000000000_u64
-      Getpeername = (1_u64 << 57) | 0x0100000000000000_u64
-      Getsockname = (1_u64 << 57) | 0x0200000000000000_u64
-      Getsockopt  = (1_u64 << 57) | 0x0400000000000000_u64
-      Listen      = (1_u64 << 57) | 0x0800000000000000_u64
-      Peeloff     = (1_u64 << 57) | 0x1000000000000000_u64
+      Read      = (1_u64 << 57) | 0x0000000000000001_u64
+      Write     = (1_u64 << 57) | 0x0000000000000002_u64
+      SeekTell  = (1_u64 << 57) | 0x0000000000000004_u64
+      Seek      = (1_u64 << 57) | 0x000000000000000c_u64
+      Mmap      = (1_u64 << 57) | 0x0000000000000010_u64
+      MmapX     = (1_u64 << 57) | 0x0000000000000020_u64
+      Create    = (1_u64 << 57) | 0x0000000000000040_u64
+      Fexecve   = (1_u64 << 57) | 0x0000000000000080_u64
+      Fsync     = (1_u64 << 57) | 0x0000000000000100_u64
+      Ftruncate = (1_u64 << 57) | 0x0000000000000200_u64
+      Lookup    = (1_u64 << 57) | 0x0000000000000400_u64
+      Fchdir    = (1_u64 << 57) | 0x0000000000000800_u64
+      Fchflags  = (1_u64 << 57) | 0x0000000000001000_u64
+      Fchmod    = (1_u64 << 57) | 0x0000000000002000_u64
+      Fchown    = (1_u64 << 57) | 0x0000000000004000_u64
+      Fcntl     = (1_u64 << 57) | 0x0000000000008000_u64
+      Flock     = (1_u64 << 57) | 0x0000000000010000_u64
+      Fpathconf = (1_u64 << 57) | 0x0000000000020000_u64
+      Fsck      = (1_u64 << 57) | 0x0000000000040000_u64
+      Fstat     = (1_u64 << 57) | 0x0000000000080000_u64
+      Fstatfs   = (1_u64 << 57) | 0x0000000000100000_u64
+      Futimes   = (1_u64 << 57) | 0x0000000000200000_u64
+      # Socket rights (all index 0; bits per <sys/capsicum.h>).
+      Accept      = (1_u64 << 57) | 0x0000000020000000_u64
+      Bind        = (1_u64 << 57) | 0x0000000040000000_u64
+      Connect     = (1_u64 << 57) | 0x0000000080000000_u64
+      Getpeername = (1_u64 << 57) | 0x0000000100000000_u64
+      Getsockname = (1_u64 << 57) | 0x0000000200000000_u64
+      Getsockopt  = (1_u64 << 57) | 0x0000000400000000_u64
+      Listen      = (1_u64 << 57) | 0x0000000800000000_u64
+      Peeloff     = (1_u64 << 57) | 0x0000001000000000_u64
+      Setsockopt  = (1_u64 << 57) | 0x0000002000000000_u64
+      Shutdown    = (1_u64 << 57) | 0x0000004000000000_u64
+      # *at path rights (index 0; each implies Lookup per the header macros).
+      Bindat    = (1_u64 << 57) | (0x0000000000000400_u64 | 0x0000008000000000_u64)
+      Connectat = (1_u64 << 57) | (0x0000000000000400_u64 | 0x0000010000000000_u64)
+      Symlinkat = (1_u64 << 57) | (0x0000000000000400_u64 | 0x0000000008000000_u64)
+      Unlinkat  = (1_u64 << 57) | (0x0000000000000400_u64 | 0x0000000010000000_u64)
 
-      # Index 1 rights
-      Setsockopt   = (1_u64 << 58) | 0x0000000000000001_u64
-      Shutdown     = (1_u64 << 58) | 0x0000000000000002_u64
-      Bindat       = (1_u64 << 58) | 0x0000000000000004_u64
-      Connectat    = (1_u64 << 58) | 0x0000000000000008_u64
-      Linkat       = (1_u64 << 58) | 0x0000000000000010_u64
-      Renameat     = (1_u64 << 58) | 0x0000000000000080_u64
-      Symlinkat    = (1_u64 << 58) | 0x0000000000000100_u64
-      Unlinkat     = (1_u64 << 58) | 0x0000000000000200_u64
-      EventAt      = (1_u64 << 58) | 0x0000000000000400_u64
-      KqueueEvent  = (1_u64 << 58) | 0x0000000000000800_u64
-      KqueueChange = (1_u64 << 58) | 0x0000000000001000_u64
+      # Index 1 rights (bits per <sys/capsicum.h>).
+      Event        = (1_u64 << 58) | 0x0000000000000020_u64
+      KqueueEvent  = (1_u64 << 58) | 0x0000000000000040_u64
+      KqueueChange = (1_u64 << 58) | 0x0000000000100000_u64
+
+      # Coerce a `Symbol` or `Right` to a `Right`. Symbols name members
+      # case-insensitively with `_` word separators (`:seek_tell` → `SeekTell`,
+      # `:kqueue_event` → `KqueueEvent`). A `Right` is returned unchanged.
+      # Raises `ArgumentError` naming the bad symbol when it matches no member.
+      #
+      # Used wherever rights are accepted so callers can write `:read` instead
+      # of `Right::Read` (e.g. `Rights.new(:read, :fstat)`).
+      def self.from(value : Symbol | Right) : Right
+        case value
+        in Right  then value
+        in Symbol then parse(value.to_s)
+        end
+      end
     end
 
     # A set of Capsicum rights that can be applied to a file descriptor.
@@ -92,8 +106,9 @@ module FreeBSD::Capsicum
         @raw = LibCapsicum::CapRights.new
       end
 
-      # Build a rights set seeded with the given rights.
-      def initialize(*rights : Right)
+      # Build a rights set seeded with the given rights. Each may be a `Right`
+      # or a `Symbol` naming one (`Rights.new(:read, :fstat)`).
+      def initialize(*rights : Symbol | Right)
         @raw = LibCapsicum::CapRights.new
         set(*rights)
       end
@@ -102,9 +117,10 @@ module FreeBSD::Capsicum
         pointerof(@raw)
       end
 
-      # Add rights. Returns self.
-      def set(*rights : Right) : self
-        add_raw(rights.map(&.value).to_a)
+      # Add rights. Each may be a `Right` or a `Symbol` naming one
+      # (`set(:accept, :listen)`). Returns self.
+      def set(*rights : Symbol | Right) : self
+        add_raw(rights.map { |r| Right.from(r).value }.to_a)
       end
 
       # Add rights given as raw uint64 values. Used for rights not enumerated
@@ -125,11 +141,12 @@ module FreeBSD::Capsicum
         {% end %}
       end
 
-      # Remove rights. Returns self.
-      def clear(*rights : Right) : self
+      # Remove rights. Each may be a `Right` or a `Symbol` naming one.
+      # Returns self.
+      def clear(*rights : Symbol | Right) : self
         {% if flag?(:freebsd) || flag?(:dragonfly) %}
           rights.each do |r|
-            LibCapsicum.__cap_rights_clear(pointerof(@raw), r.value, 0_u64)
+            LibCapsicum.__cap_rights_clear(pointerof(@raw), Right.from(r).value, 0_u64)
           end
           self
         {% else %}
@@ -137,10 +154,11 @@ module FreeBSD::Capsicum
         {% end %}
       end
 
-      # True if `right` is present in this rights set.
-      def includes?(right : Right) : Bool
+      # True if `right` is present in this rights set. Accepts a `Right` or a
+      # `Symbol` naming one.
+      def includes?(right : Symbol | Right) : Bool
         {% if flag?(:freebsd) || flag?(:dragonfly) %}
-          LibCapsicum.__cap_rights_is_set(pointerof(@raw), right.value, 0_u64)
+          LibCapsicum.__cap_rights_is_set(pointerof(@raw), Right.from(right).value, 0_u64)
         {% else %}
           raise UnsupportedPlatformError.new
         {% end %}
@@ -156,10 +174,12 @@ module FreeBSD::Capsicum
         {% end %}
       end
 
-      # Apply these rights as the hard limit for `io`.
-      def apply_to(io : IO::FileDescriptor) : Nil
+      # Apply these rights as the hard limit for the raw descriptor `fd`.
+      # Use this for fd-bearing handles that aren't `IO::FileDescriptor`,
+      # e.g. a `Socket` (`rights.apply_to(server.fd)`).
+      def apply_to(fd : Int32) : Nil
         {% if flag?(:freebsd) || flag?(:dragonfly) %}
-          if LibCapsicum.cap_rights_limit(io.fd, pointerof(@raw)) != 0
+          if LibCapsicum.cap_rights_limit(fd, pointerof(@raw)) != 0
             raise Error.from_errno("cap_rights_limit")
           end
         {% else %}
@@ -167,17 +187,28 @@ module FreeBSD::Capsicum
         {% end %}
       end
 
-      # Current effective rights of `io`.
-      def self.of(io : IO::FileDescriptor) : Rights
+      # Apply these rights as the hard limit for `io`.
+      def apply_to(io : IO::FileDescriptor) : Nil
+        apply_to(io.fd)
+      end
+
+      # Current effective rights of the raw descriptor `fd`. Use for fd-bearing
+      # handles that aren't `IO::FileDescriptor`, e.g. a `Socket`.
+      def self.of(fd : Int32) : Rights
         {% if flag?(:freebsd) || flag?(:dragonfly) %}
           r = Rights.new
-          if LibCapsicum.__cap_rights_get(LibCapsicum::CAP_RIGHTS_VERSION, io.fd, pointerof(r.@raw)) != 0
+          if LibCapsicum.__cap_rights_get(LibCapsicum::CAP_RIGHTS_VERSION, fd, pointerof(r.@raw)) != 0
             raise Error.from_errno("cap_rights_get")
           end
           r
         {% else %}
           raise UnsupportedPlatformError.new
         {% end %}
+      end
+
+      # Current effective rights of `io`.
+      def self.of(io : IO::FileDescriptor) : Rights
+        of(io.fd)
       end
     end
 

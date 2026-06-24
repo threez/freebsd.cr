@@ -22,6 +22,41 @@ describe FreeBSD::Capsicum::Capability::Rights do
       got.includes?(FreeBSD::Capsicum::Capability::Right::Write).should be_false
     end
   end
+
+  it_on_capsicum "applies rights given as a raw fd (Socket support)" do
+    server = TCPServer.new("127.0.0.1", 0)
+    begin
+      FreeBSD::Capsicum::Capability::Rights.new(:accept, :listen).apply_to(server.fd)
+      got = FreeBSD::Capsicum::Capability::Rights.of(server.fd)
+      got.includes?(:accept).should be_true
+      got.includes?(:connect).should be_false
+    ensure
+      server.close
+    end
+  end
+end
+
+private alias Right = FreeBSD::Capsicum::Capability::Right
+
+describe FreeBSD::Capsicum::Capability::Right do
+  it "coerces symbols to rights, case-insensitively with underscores" do
+    Right.from(:read).should eq(Right::Read)
+    Right.from(:seek_tell).should eq(Right::SeekTell)
+    Right.from(:kqueue_event).should eq(Right::KqueueEvent)
+    Right.from(:event).should eq(Right::Event)
+    Right.from(Right::Accept).should eq(Right::Accept)
+  end
+
+  it "raises ArgumentError naming an unknown symbol" do
+    expect_raises(ArgumentError) { Right.from(:bogus) }
+  end
+
+  it "builds a set from mixed symbols and Right constants" do
+    r = FreeBSD::Capsicum::Capability::Rights.new(:read, Right::Fstat)
+    r.includes?(:read).should be_true
+    r.includes?(:fstat).should be_true
+    r.includes?(:write).should be_false
+  end
 end
 
 describe "FreeBSD::Capsicum.sandbox" do
