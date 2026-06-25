@@ -71,6 +71,13 @@ module FreeBSD::Sandbox
   #   "freebsd/capsicum/integrate/file"` routes `File.open`/`File.info?`/
   #   `File.exists?` beneath the base, and `freebsd/capsicum/integrate/dir`
   #   routes `Dir.children`/`Dir.entries`/`Dir.each_child`.
+  # - `sqlite(name, path, rights: [...]?, exact_rights: false)` — pre-open the
+  #   directory holding a SQLite database (`path`), register it, and install the
+  #   `openat` VFS override so a WAL database reads and writes under `cap_enter`.
+  #   The accessor `Sandbox.<name>` is the `Capsicum::Directory`. Rights default
+  #   to `Capsicum::SQLITE_WAL_RIGHTS` (the full read+write WAL set). Requires
+  #   `require "freebsd/capsicum/integrate/sqlite"` (and the `db`/`sqlite3`
+  #   shards) in the program. Open the db by **absolute** path after the block.
   # - `bind name, host, port, rights: [...]?` — privileged `TCPServer`;
   #   `Sandbox.<name> : TCPServer`. The listener fd is rights-limited before
   #   `cap_enter`: `rights:` overrides, `rights: false` skips, and when omitted
@@ -138,6 +145,22 @@ module FreeBSD::Sandbox
           # directive, typed `{{ dir_type }}`. Raises if accessed before setup
           # ran (e.g. in a helper child).
           def self.{{ expr.args[0].id }} : {{ dir_type }}
+            @@{{ expr.args[0].id }}.not_nil!
+          end
+        {% elsif expr.is_a?(Call) && expr.name == "sqlite" %}
+          # `sqlite` opens one directory (holding the db + its WAL sidecars) and
+          # exposes it as a `Directory`, like the single-path `directory` form.
+          @@{{ expr.args[0].id }} : ::FreeBSD::Capsicum::Directory? = nil
+
+          # :nodoc:
+          def self.__set_{{ expr.args[0].id }}(handle : ::FreeBSD::Capsicum::Directory) : Nil
+            @@{{ expr.args[0].id }} = handle
+          end
+
+          # The database directory opened by the `{{ expr.args[0].id }}` sqlite
+          # directive, typed `::FreeBSD::Capsicum::Directory`. Raises if accessed
+          # before setup ran (e.g. in a helper child).
+          def self.{{ expr.args[0].id }} : ::FreeBSD::Capsicum::Directory
             @@{{ expr.args[0].id }}.not_nil!
           end
         {% elsif expr.is_a?(Call) && expr.name == "bind" %}
@@ -216,6 +239,12 @@ module FreeBSD::Sandbox
               {% else %}
                 ::FreeBSD::Sandbox.__set_{{ expr.args[0].id }}(::FreeBSD::Sandbox.__open_directory({{ expr.args[1] }}, {{ rights }}, {{ exact }}))
               {% end %}
+            {% elsif expr.name == "sqlite" %}
+              {% rights = nil %}
+              {% exact = false %}
+              {% if expr.named_args %}{% for na in expr.named_args %}{% if na.name == "rights" %}{% rights = na.value %}{% elsif na.name == "exact_rights" %}{% exact = na.value %}{% end %}{% end %}{% end %}
+              {% if rights == nil %}{% rights = "::FreeBSD::Capsicum::SQLITE_WAL_RIGHTS".id %}{% end %}
+              ::FreeBSD::Sandbox.__set_{{ expr.args[0].id }}(::FreeBSD::Sandbox.__open_sqlite_dir({{ expr.args[1] }}, {{ rights }}, {{ exact }}))
             {% elsif expr.name == "bind" %}
               ::FreeBSD::Sandbox.__set_{{ expr.args[0].id }}(::FreeBSD::Sandbox.__bind_listener({{ expr.args[1] }}, {{ expr.args[2] }}))
               {% rights = nil %}
@@ -331,6 +360,18 @@ module FreeBSD::Sandbox
                               rights : Enumerable(Symbol | ::FreeBSD::Capsicum::Capability::Right),
                               exact_rights : Bool = false) : Array(::FreeBSD::Capsicum::Directory)
     paths.map { |path| __open_directory(path, rights, exact_rights) }
+  end
+
+  # :nodoc:
+  # Open `path` as a `Capsicum::Directory` (before cap_enter) with the rights a
+  # read+write WAL database needs, register it, and install the SQLite VFS
+  # `openat` override — used by the `sqlite` directive. Requires
+  # `freebsd/capsicum/integrate/sqlite` to have been required by the program
+  # (it provides `register_sqlite_dir` and links libsqlite3).
+  def self.__open_sqlite_dir(path : String,
+                             rights : Enumerable(Symbol | ::FreeBSD::Capsicum::Capability::Right),
+                             exact_rights : Bool = false) : ::FreeBSD::Capsicum::Directory
+    ::FreeBSD::Capsicum.register_sqlite_dir(path, rights: rights, exact_rights: exact_rights)
   end
 
   # :nodoc:
