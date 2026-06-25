@@ -20,11 +20,12 @@
 # required, the two reopens chain via `previous_def`; require *this* file after
 # the casper one for precedence: directory registry -> fileargs -> libc.
 #
-# `File.open`, `File.info?` / `File.info`, and `File.exists?` are hooked (the
-# latter two via `fstatat`/`faccessat` under the dir fd). `File.real_path` is
-# **not** routed — `realpath(3)` has no `*at` form usable beneath a dir fd, so
-# paths beneath a registered base fall through to libc and raise `ECAPMODE` in
-# the sandbox, same as any unhooked op. For directory *listing*
+# `File.open`, `File.info?` / `File.info`, `File.exists?`, and `File.delete` /
+# `File.delete?` are hooked (`info?`/`exists?` via `fstatat`/`faccessat`,
+# `delete` via `unlinkat`, all under the dir fd). `File.real_path` is **not**
+# routed — `realpath(3)` has no `*at` form usable beneath a dir fd, so paths
+# beneath a registered base fall through to libc and raise `ECAPMODE` in the
+# sandbox, same as any unhooked op. For directory *listing*
 # (`Dir.entries`/`glob`/…) require `freebsd/capsicum/integrate/dir`.
 
 require "../directory"
@@ -57,6 +58,15 @@ require "../directory"
       if match = FreeBSD::Capsicum.directory_for(path)
         dir, rel = match
         dir.exists?(rel)
+      else
+        previous_def
+      end
+    end
+
+    def self.delete(path, *, raise_on_missing : Bool) : Bool
+      if match = FreeBSD::Capsicum.directory_for(path)
+        dir, rel = match
+        dir.delete(rel, raise_on_missing: raise_on_missing)
       else
         previous_def
       end

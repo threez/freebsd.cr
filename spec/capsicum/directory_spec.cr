@@ -205,6 +205,66 @@ describe FreeBSD::Capsicum::Directory do
     end
   end
 
+  describe "#delete / #delete?" do
+    it_on_capsicum "unlinks files beneath the dir fd via unlinkat after cap_enter" do
+      with_tmpdir do |tmp|
+        File.write(File.join(tmp, "gone.txt"), "x")
+        File.write(File.join(tmp, "keep.txt"), "y")
+        in_sandbox_child do
+          dir = FreeBSD::Capsicum::Directory.open(tmp,
+            rights: [:lookup, :read, :fstat, :unlinkat])
+          FreeBSD::Capsicum.sandbox!
+
+          dir.delete("gone.txt").should be_true
+          dir.exists?("gone.txt").should be_false
+          dir.exists?("keep.txt").should be_true
+
+          # Missing file: delete? is a no-op false; delete raises.
+          dir.delete?("missing").should be_false
+          expect_raises(File::Error) { dir.delete("missing") }
+
+          # Escapes are rejected in-kernel (resolve-beneath), not allowed through.
+          expect_raises(File::Error) { dir.delete("../keep.txt") }
+        end
+      end
+    end
+
+    it_on_capsicum "routes File.delete / File.delete? through the registered directory" do
+      with_tmpdir do |tmp|
+        File.write(File.join(tmp, "a.txt"), "1")
+        File.write(File.join(tmp, "b.txt"), "2")
+        in_sandbox_child do
+          dir = FreeBSD::Capsicum::Directory.open(tmp,
+            rights: [:lookup, :read, :fstat, :unlinkat])
+          FreeBSD::Capsicum.register_directory(dir)
+          FreeBSD::Capsicum.sandbox!
+
+          File.delete(File.join(tmp, "a.txt"))
+          File.exists?(File.join(tmp, "a.txt")).should be_false
+
+          File.delete?(File.join(tmp, "b.txt")).should be_true
+          File.delete?(File.join(tmp, "b.txt")).should be_false # already gone
+
+
+        ensure
+          FreeBSD::Capsicum.clear_directories
+        end
+      end
+    end
+
+    it_on_capsicum "delete requires :unlinkat (exact_rights without it raises)" do
+      with_tmpdir do |tmp|
+        File.write(File.join(tmp, "file.txt"), "x")
+        in_sandbox_child do
+          dir = FreeBSD::Capsicum::Directory.open(tmp,
+            rights: [:lookup, :read, :fstat], exact_rights: true)
+          FreeBSD::Capsicum.sandbox!
+          expect_raises(File::Error) { dir.delete("file.txt") }
+        end
+      end
+    end
+  end
+
   describe "#entries / #children / #each_child" do
     it_on_capsicum "lists directory contents beneath the dir fd after cap_enter" do
       with_tmpdir do |tmp|
