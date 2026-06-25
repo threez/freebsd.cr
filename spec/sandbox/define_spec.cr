@@ -11,7 +11,7 @@ describe FreeBSD::Sandbox::PrivdropConfig do
     cfg = FreeBSD::Sandbox.__privdrop_config("nobody", chroot: "/var/empty")
     cfg.username.should eq("nobody")
     cfg.chroot.should eq("/var/empty")
-    cfg.scrub_env.should be_true
+    cfg.scrub_env?.should be_true
     cfg.uid.should be_nil
   end
 
@@ -20,7 +20,7 @@ describe FreeBSD::Sandbox::PrivdropConfig do
       uid: 65534_u32, gid: 65534_u32, scrub_env: false)
     cfg.uid.should eq(65534_u32)
     cfg.gid.should eq(65534_u32)
-    cfg.scrub_env.should be_false
+    cfg.scrub_env?.should be_false
     cfg.username.should be_nil
   end
 end

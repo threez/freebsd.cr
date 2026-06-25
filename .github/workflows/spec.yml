@@ -1,0 +1,39 @@
+name: spec
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  spec:
+    runs-on: ubuntu-latest
+    name: FreeBSD 15.1 spec
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run specs in a FreeBSD VM
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: "15.1"
+          usesh: true
+          # Install the Crystal toolchain. shard.yml requires Crystal >= 1.19.1;
+          # the FreeBSD `crystal` package provides a compatible version.
+          prepare: |
+            pkg install -y crystal shards
+          # vmactions runs these as root, so the privdrop specs that assert
+          # "without root" behavior self-skip (they guard with getuid == 0).
+          # `shards install` builds bin/ameba via the ameba shard's postinstall.
+          #
+          # spec/pkg is excluded: those specs need a provisioned, lockable libpkg
+          # database. The fresh CI VM's pkg DB exists but isn't lockable
+          # (`pkgdb_upgrade_lock` -> EPKG_FATAL), so they error here even though
+          # they pass on a real host. Run every other spec directory.
+          run: |
+            set -e
+            shards install
+            crystal tool format --check
+            ./bin/ameba
+            crystal spec spec/audit spec/casper spec/capsicum spec/nvlist spec/privdrop spec/sandbox spec/spec_helper_spec.cr

@@ -1,4 +1,5 @@
 require "../casper"
+require "../capsicum/file_from_fd"
 require "./integrate/file"
 
 {% if flag?(:freebsd) || flag?(:dragonfly) %}
@@ -32,18 +33,6 @@ require "./integrate/file"
     fun fileargs_free(fa : FileArgs) : Void
   end
 {% end %}
-
-class ::File
-  # :nodoc:
-  # Construct a `::File` directly from an already-open fd while preserving
-  # the path metadata. Used by `Casper::Service::FileArgs#open_file` so a
-  # helper-opened fd surfaces as a real `::File` (with `.path`, `.info`,
-  # full buffered IO) rather than a bare `IO::FileDescriptor`. Mirrors the
-  # private `File#initialize(@path, fd, mode, ...)` constructor.
-  def self.from_fd(path : String, fd : Int32, mode : String = "r") : self
-    new(path, fd, mode, blocking: true)
-  end
-end
 
 module FreeBSD::Casper
   # Casper's `system.fileargs` service: open a pre-declared set of paths from

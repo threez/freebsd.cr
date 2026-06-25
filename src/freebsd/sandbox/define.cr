@@ -26,6 +26,7 @@ module FreeBSD::Sandbox
   #    re-opens a Casper channel (the `cap_init` / `EDEADLK` trap):
   #    a. Casper services: `net`, `pwd`, `grp`, `sysctl`, `syslog`, `fileargs`.
   #    b. `open(name, Type) { handle }` — run the block as root, store the handle.
+  #       `directory(name, path_or_paths)` — pre-open directory fd(s) for openat.
   #    c. `bind(name, host, port)` — open a privileged listener as root, store it.
   #    d. `user(...)` — privilege drop (groups → chroot → setgid → setuid → scrub).
   #    e. `FreeBSD::Capsicum.sandbox!` — enter capability mode.
@@ -57,6 +58,19 @@ module FreeBSD::Sandbox
   #   `Sandbox.<name> : Type`. With `rights:` the handle's fd is limited via
   #   `cap_rights_limit` before `cap_enter`; `Type` must then be fd-bearing
   #   (`IO::FileDescriptor` or `Socket`) or it is a compile error.
+  # - `directory(name, path_or_paths, rights: [...]?, exact_rights: false)` —
+  #   pre-open a directory fd (folders only) before `cap_enter` so files beneath
+  #   it can be opened via `openat` from the sandbox. `path_or_paths` is a single
+  #   path string or an array of them; the accessor `Sandbox.<name>` is a
+  #   `Capsicum::Directory` (single) or `Array(Capsicum::Directory)` (array).
+  #   Each handle is rights-limited (default `[:lookup, :read, :fstat]`). By
+  #   default the rights `openat` and Crystal's IO machinery need are unioned in
+  #   (`:lookup, :fcntl, :fstat, :seek`); pass `exact_rights: true` to apply
+  #   exactly the listed rights (advanced — see `Capsicum::Directory.open`).
+  #   Each handle is registered for transparent routing: `require
+  #   "freebsd/capsicum/integrate/file"` routes `File.open`/`File.info?`/
+  #   `File.exists?` beneath the base, and `freebsd/capsicum/integrate/dir`
+  #   routes `Dir.children`/`Dir.entries`/`Dir.each_child`.
   # - `bind name, host, port, rights: [...]?` — privileged `TCPServer`;
   #   `Sandbox.<name> : TCPServer`. The listener fd is rights-limited before
   #   `cap_enter`: `rights:` overrides, `rights: false` skips, and when omitted
@@ -102,6 +116,28 @@ module FreeBSD::Sandbox
           # `{{ rtype }}`. Raises if accessed before setup ran (e.g. in a
           # helper child).
           def self.{{ expr.args[0].id }} : {{ rtype }}
+            @@{{ expr.args[0].id }}.not_nil!
+          end
+        {% elsif expr.is_a?(Call) && expr.name == "directory" %}
+          # `directory` takes a single path or an array of paths. The accessor
+          # type follows the argument: one path -> Directory, an array literal ->
+          # Array(Directory). The class var is inferred from the setter param.
+          {% if expr.args[1].is_a?(ArrayLiteral) %}
+            {% dir_type = "Array(::FreeBSD::Capsicum::Directory)".id %}
+          {% else %}
+            {% dir_type = "::FreeBSD::Capsicum::Directory".id %}
+          {% end %}
+          @@{{ expr.args[0].id }} : {{ dir_type }}? = nil
+
+          # :nodoc:
+          def self.__set_{{ expr.args[0].id }}(handle : {{ dir_type }}) : Nil
+            @@{{ expr.args[0].id }} = handle
+          end
+
+          # The directory handle(s) opened by the `{{ expr.args[0].id }}`
+          # directive, typed `{{ dir_type }}`. Raises if accessed before setup
+          # ran (e.g. in a helper child).
+          def self.{{ expr.args[0].id }} : {{ dir_type }}
             @@{{ expr.args[0].id }}.not_nil!
           end
         {% elsif expr.is_a?(Call) && expr.name == "bind" %}
@@ -169,6 +205,16 @@ module FreeBSD::Sandbox
                   {{ expr.raise "rights: requires an fd-bearing handle (IO::FileDescriptor or Socket), got #{rtype}" }}
                 {% end %}
                 ::FreeBSD::Sandbox.__apply_rights(::FreeBSD::Sandbox.{{ expr.args[0].id }}.fd, {{ rights }})
+              {% end %}
+            {% elsif expr.name == "directory" %}
+              {% rights = nil %}
+              {% exact = false %}
+              {% if expr.named_args %}{% for na in expr.named_args %}{% if na.name == "rights" %}{% rights = na.value %}{% elsif na.name == "exact_rights" %}{% exact = na.value %}{% end %}{% end %}{% end %}
+              {% if rights == nil %}{% rights = "[:lookup, :read, :fstat]".id %}{% end %}
+              {% if expr.args[1].is_a?(ArrayLiteral) %}
+                ::FreeBSD::Sandbox.__set_{{ expr.args[0].id }}(::FreeBSD::Sandbox.__open_directories({{ expr.args[1] }}, {{ rights }}, {{ exact }}))
+              {% else %}
+                ::FreeBSD::Sandbox.__set_{{ expr.args[0].id }}(::FreeBSD::Sandbox.__open_directory({{ expr.args[1] }}, {{ rights }}, {{ exact }}))
               {% end %}
             {% elsif expr.name == "bind" %}
               ::FreeBSD::Sandbox.__set_{{ expr.args[0].id }}(::FreeBSD::Sandbox.__bind_listener({{ expr.args[1] }}, {{ expr.args[2] }}))
@@ -267,6 +313,27 @@ module FreeBSD::Sandbox
   end
 
   # :nodoc:
+  # Open `path` as a `Capsicum::Directory` (before cap_enter), limit its rights,
+  # and register it for transparent `File.open` routing. Used by the single-path
+  # form of the `directory` directive.
+  def self.__open_directory(path : String,
+                            rights : Enumerable(Symbol | ::FreeBSD::Capsicum::Capability::Right),
+                            exact_rights : Bool = false) : ::FreeBSD::Capsicum::Directory
+    dir = ::FreeBSD::Capsicum::Directory.open(path, rights: rights, exact_rights: exact_rights)
+    ::FreeBSD::Capsicum.register_directory(dir)
+    dir
+  end
+
+  # :nodoc:
+  # Open and register each of `paths` (see `__open_directory`); used by the
+  # array form of the `directory` directive. Returns the handles in order.
+  def self.__open_directories(paths : Enumerable(String),
+                              rights : Enumerable(Symbol | ::FreeBSD::Capsicum::Capability::Right),
+                              exact_rights : Bool = false) : Array(::FreeBSD::Capsicum::Directory)
+    paths.map { |path| __open_directory(path, rights, exact_rights) }
+  end
+
+  # :nodoc:
   # Build a `Capability::Rights` from a list of `Symbol`/`Right` and apply it as
   # the hard limit on `fd`. Used by the `open`/`bind` directives' `rights:`
   # option. Each element is coerced through `Right.from`, so `:accept` and
@@ -274,7 +341,7 @@ module FreeBSD::Sandbox
   def self.__apply_rights(fd : Int32,
                           rights : Enumerable(Symbol | ::FreeBSD::Capsicum::Capability::Right)) : Nil
     set = ::FreeBSD::Capsicum::Capability::Rights.new
-    rights.each { |r| set.set(::FreeBSD::Capsicum::Capability::Right.from(r)) }
+    rights.each { |right| set.set(::FreeBSD::Capsicum::Capability::Right.from(right)) }
     set.apply_to(fd)
   end
 end

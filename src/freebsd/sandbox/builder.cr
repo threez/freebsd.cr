@@ -11,7 +11,7 @@ module FreeBSD::Sandbox
     getter uid : LibC::UidT?
     getter gid : LibC::GidT?
     getter chroot : String?
-    getter scrub_env : Bool
+    getter? scrub_env : Bool
 
     def initialize(@username : String? = nil,
                    @uid : LibC::UidT? = nil,
