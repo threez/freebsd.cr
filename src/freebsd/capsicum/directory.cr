@@ -21,6 +21,7 @@ require "./file_from_fd"
     fun openat(fd : Int32, path : LibC::Char*, oflag : Int32, ...) : Int32
     fun fstatat(fd : Int32, path : LibC::Char*, sb : LibC::Stat*, flag : Int32) : Int32
     fun faccessat(fd : Int32, path : LibC::Char*, mode : Int32, flag : Int32) : Int32
+    fun unlinkat(fd : Int32, path : LibC::Char*, flag : Int32) : Int32
     fun fdopendir(fd : Int32) : LibC::DIR*
     fun dup(fd : Int32) : Int32
   end
@@ -233,6 +234,36 @@ module FreeBSD::Capsicum
       {% else %}
         raise UnsupportedPlatformError.new
       {% end %}
+    end
+
+    # `unlinkat` `relpath` beneath this directory, removing the file. `relpath`
+    # must be relative; `..`/absolute escapes are rejected in-kernel by
+    # `AT_RESOLVE_BENEATH`. Needs `:lookup` + `:unlinkat` on the directory fd
+    # (`:unlinkat` already implies `:lookup`). Mirrors `File.delete`: a missing
+    # file raises `File::Error`; pass `raise_on_missing: false` (or use
+    # `#delete?`) to treat a missing file as a no-op returning `false`.
+    def delete(relpath : String, raise_on_missing : Bool = true) : Bool
+      {% if flag?(:freebsd) || flag?(:dragonfly) %}
+        check_open!
+        ret = FreeBSD::Capsicum.syscall do
+          LibOpenat.unlinkat(@fd, relpath, LibOpenat::AT_RESOLVE_BENEATH)
+        end
+        if ret == 0
+          true
+        elsif !raise_on_missing && ::File::NotFoundError.os_error?(Errno.value)
+          false
+        else
+          raise ::File::Error.from_errno("unlinkat", file: relpath)
+        end
+      {% else %}
+        raise UnsupportedPlatformError.new
+      {% end %}
+    end
+
+    # Like `#delete` but returns `false` instead of raising when `relpath` does
+    # not exist — parity with `File.delete?`.
+    def delete?(relpath : String) : Bool
+      delete(relpath, raise_on_missing: false)
     end
 
     # The names directly under `relpath` (default: this directory), **including**

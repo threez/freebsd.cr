@@ -21,8 +21,10 @@ jobs:
           usesh: true
           # Install the Crystal toolchain. shard.yml requires Crystal >= 1.19.1;
           # the FreeBSD `crystal` package provides a compatible version.
+          # `sqlite3` provides libsqlite3, which the capsicum sqlite VFS
+          # integration (and its spec) link via `@[Link("sqlite3")]`.
           prepare: |
-            pkg install -y crystal shards
+            pkg install -y crystal shards sqlite3
           # vmactions runs these as root, so the privdrop specs that assert
           # "without root" behavior self-skip (they guard with getuid == 0).
           # `shards install` builds bin/ameba via the ameba shard's postinstall.

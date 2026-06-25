@@ -1,5 +1,5 @@
 name: freebsd
-version: 15.1.6
+version: 15.1.7
 
 authors:
   - Vincent Landgraf <vincent@landgrafx.de>
@@ -20,3 +20,10 @@ development_dependencies:
   ameba:
     github: crystal-ameba/ameba
     version: ~> 1.6.0
+  # Used only by the sandboxed-SQLite example and spec
+  # (examples/capsicum/sqlite.cr, spec/capsicum/integrate/sqlite_spec.cr). The
+  # shard itself binds only the libsqlite3 VFS symbols it needs and does not
+  # depend on this API — clients add sqlite3 to their own shard.yml.
+  sqlite3:
+    github: crystal-lang/crystal-sqlite3
+    version: ~> 0.23.0
