@@ -156,10 +156,10 @@ end
 
 # ---- everything below runs sandboxed (capability mode, dropped to nobody) ----
 
-log      = FreeBSD::Sandbox.access_log              # => File   (write-only append)
-listener = FreeBSD::Sandbox.listener                # => TCPServer (privileged, carried fd)
-uid      = FreeBSD::Sandbox.uid.to_u32              # the dropped-to uid (nobody)
-visits   = FreeBSD::Casper::Helper.client("visits") # channel to the root helper
+log = FreeBSD::Sandbox.access_log                 # => File   (write-only append)
+listener = FreeBSD::Sandbox.listener              # => TCPServer (privileged, carried fd)
+uid = FreeBSD::Sandbox.uid.to_u32                 # the dropped-to uid (nobody)
+visits = FreeBSD::Casper::Helper.client("visits") # channel to the root helper
 
 # Hop-by-hop headers must not be forwarded verbatim; HTTP::Client manages them.
 HOP_BY_HOP = %w[host connection content-length transfer-encoding keep-alive
@@ -183,9 +183,9 @@ audit_request = ->(remote : String, target : String, ok : Bool) do
 end
 
 server = HTTP::Server.new do |context|
-  request  = context.request
+  request = context.request
   response = context.response
-  remote   = request.remote_address.try(&.to_s) || "-"
+  remote = request.remote_address.try(&.to_s) || "-"
 
   case request.path
   when "/"
@@ -220,7 +220,7 @@ server = HTTP::Server.new do |context|
       next
     end
 
-    uri  = URI.parse(target)
+    uri = URI.parse(target)
     host = uri.host
     port = uri.port || 80
 

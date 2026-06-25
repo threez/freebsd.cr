@@ -75,18 +75,18 @@ end
 
 # ---- sandboxed body ----
 
-log      = FreeBSD::Sandbox.access_log
+log = FreeBSD::Sandbox.access_log
 listener = FreeBSD::Sandbox.listener
-uid      = FreeBSD::Sandbox.uid.to_u32
-visits   = FreeBSD::Casper::Helper.client("visits")
+uid = FreeBSD::Sandbox.uid.to_u32
+visits = FreeBSD::Casper::Helper.client("visits")
 
 HOP_BY_HOP = %w[host connection content-length transfer-encoding keep-alive
   proxy-connection te trailer upgrade]
 
 server = HTTP::Server.new do |context|
-  request  = context.request
+  request = context.request
   response = context.response
-  remote   = request.remote_address.try(&.to_s) || "-"
+  remote = request.remote_address.try(&.to_s) || "-"
 
   case request.path
   when "/healthz"
@@ -99,9 +99,9 @@ server = HTTP::Server.new do |context|
     response.print String.new(visits.request("stats"))
   when "/proxy"
     target = request.query_params["url"]?
-    uri    = target ? URI.parse(target) : nil
-    host   = uri.try(&.host)
-    port   = uri.try(&.port) || 80
+    uri = target ? URI.parse(target) : nil
+    host = uri.try(&.host)
+    port = uri.try(&.port) || 80
 
     if uri.nil? || uri.scheme != "http" || host.nil? || ALLOWED[host]? != port
       response.respond_with_status(:forbidden, "host not allowed")

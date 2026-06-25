@@ -297,8 +297,8 @@ module FreeBSD::Casper
     # net.connect_dns("example.com", [80, 443]) # single host, several ports
     # ```
     def connect_dns(host : String, ports : Int | String | Enumerable) : Nil
-      limit(Mode::Name2Addr | Mode::ConnectDNS) do |b|
-        b.allow_connect_dns(host, ports)
+      limit(Mode::Name2Addr | Mode::ConnectDNS) do |builder|
+        builder.allow_connect_dns(host, ports)
       end
     end
 
@@ -311,8 +311,8 @@ module FreeBSD::Casper
     # })
     # ```
     def connect_dns(hosts : Hash(String, _)) : Nil
-      limit(Mode::Name2Addr | Mode::ConnectDNS) do |b|
-        hosts.each { |host, ports| b.allow_connect_dns(host, ports) }
+      limit(Mode::Name2Addr | Mode::ConnectDNS) do |builder|
+        hosts.each { |host, ports| builder.allow_connect_dns(host, ports) }
       end
     end
   end

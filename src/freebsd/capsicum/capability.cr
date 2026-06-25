@@ -120,7 +120,7 @@ module FreeBSD::Capsicum
       # Add rights. Each may be a `Right` or a `Symbol` naming one
       # (`set(:accept, :listen)`). Returns self.
       def set(*rights : Symbol | Right) : self
-        add_raw(rights.map { |r| Right.from(r).value }.to_a)
+        add_raw(rights.map { |right| Right.from(right).value }.to_a)
       end
 
       # Add rights given as raw uint64 values. Used for rights not enumerated
