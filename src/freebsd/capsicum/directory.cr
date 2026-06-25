@@ -21,6 +21,7 @@ require "./file_from_fd"
     fun openat(fd : Int32, path : LibC::Char*, oflag : Int32, ...) : Int32
     fun fstatat(fd : Int32, path : LibC::Char*, sb : LibC::Stat*, flag : Int32) : Int32
     fun faccessat(fd : Int32, path : LibC::Char*, mode : Int32, flag : Int32) : Int32
+    fun unlinkat(fd : Int32, path : LibC::Char*, flag : Int32) : Int32
     fun fdopendir(fd : Int32) : LibC::DIR*
     fun dup(fd : Int32) : Int32
   end
