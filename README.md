@@ -100,6 +100,27 @@ On non-FreeBSD hosts most specs are marked `pending`. To exercise the real
 bindings, run the suite on a FreeBSD 14/15 host or VM (FreeBSD 15 is used in
 development; FreeBSD 14 is also supported).
 
+### Make tasks
+
+The `Makefile` wraps the common workflows:
+
+| Task             | What it does                                                        |
+| ---------------- | ------------------------------------------------------------------- |
+| `make all`       | `clean fmt lint docs spec` — the full local check.                  |
+| `make fmt`       | Format the code (`crystal tool format`).                            |
+| `make fmtcheck`  | Verify formatting without writing (`crystal tool format --check`).  |
+| `make lint`      | Run ameba (builds it via `shards install` if needed).               |
+| `make fix`       | Run ameba with `--fix` to auto-correct findings.                    |
+| `make spec`      | Run the spec suite (`crystal spec -v`).                             |
+| `make docs`      | Build the API docs into `docs/`.                                    |
+| `make version`   | Sync the `VERSION` constant in `src/` to `shard.yml`'s version.     |
+| `make tag`       | Create the annotated git tag `vX.Y.Z` from `shard.yml`'s version.   |
+
+**Releasing:** bump the `version:` field in `shard.yml` first, then run
+`make version` so the `VERSION` constant in `src/freebsd.cr` stays in sync —
+they must match. Commit both together (`bump version to X.Y.Z`), and optionally
+`make tag` to tag the release.
+
 ## Contributing
 
 1. Fork it (<https://github.com/threez/freebsd.cr/fork>)
