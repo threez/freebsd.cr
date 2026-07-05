@@ -30,12 +30,38 @@ module FreeBSD::Pkg
   SUPPORTED = {{ flag?(:freebsd) }}
 
   # Network protocol preference flags for `init` / `init!`.
+  #
+  # Combine values with `|`, or pass a symbol / array of symbols:
+  #
+  # ```
+  # FreeBSD::Pkg.init(flags: :use_ipv4) { }
+  # FreeBSD::Pkg.init(flags: [:use_ipv4, :use_ipv6]) { }
+  # FreeBSD::Pkg.init(flags: InitFlags::UseIpv4 | InitFlags::UseIpv6) { }
+  # ```
   @[Flags]
   enum InitFlags : UInt32
     # Prefer IPv4 for repository connections.
     UseIpv4 = 1
     # Prefer IPv6 for repository connections.
     UseIpv6 = 2
+
+    # Coerce a `Symbol`, an `InitFlags`, or an `Enumerable` of either into a
+    # single `InitFlags`. Symbols name members case-insensitively with `_`
+    # word separators (`:use_ipv4`, `:use_ipv6`); an array is OR-folded so
+    # `[:use_ipv4, :use_ipv6]` replaces
+    # `InitFlags::UseIpv4 | InitFlags::UseIpv6`. Raises `ArgumentError`
+    # naming a bad symbol.
+    def self.from(value : Symbol | InitFlags) : InitFlags
+      case value
+      in InitFlags then value
+      in Symbol    then parse(value.to_s)
+      end
+    end
+
+    # :ditto:
+    def self.from(values : Enumerable(Symbol | InitFlags)) : InitFlags
+      values.reduce(InitFlags::None) { |acc, v| acc | from(v) }
+    end
   end
 
   # Initializes libpkg, yields, then shuts it down.
@@ -47,7 +73,7 @@ module FreeBSD::Pkg
   # (`/usr/local/etc/pkg.conf` and `/usr/local/etc/pkg/repos/`).
   def self.init(conffile : String? = nil,
                 repodir : String? = nil,
-                flags : InitFlags = InitFlags::None, &) : Nil
+                flags : InitFlags | Symbol | Enumerable(Symbol | InitFlags) = InitFlags::None, &) : Nil
     init!(conffile, repodir, flags)
     begin
       yield
@@ -59,9 +85,9 @@ module FreeBSD::Pkg
   # Initializes libpkg without a block. The caller must call `.shutdown`.
   def self.init!(conffile : String? = nil,
                  repodir : String? = nil,
-                 flags : InitFlags = InitFlags::None) : Nil
+                 flags : InitFlags | Symbol | Enumerable(Symbol | InitFlags) = InitFlags::None) : Nil
     {% if flag?(:freebsd) %}
-      rc = LibPkg.pkg_ini(conffile, repodir, LibPkg::PkgInitFlags.new(flags.value))
+      rc = LibPkg.pkg_ini(conffile, repodir, LibPkg::PkgInitFlags.new(InitFlags.from(flags).value))
       raise Error.from_pkg(rc, "pkg_ini") unless rc == LibPkg::PkgErrorT::Ok.value
     {% else %}
       raise UnsupportedPlatformError.new

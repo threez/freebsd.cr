@@ -34,6 +34,17 @@ module FreeBSD::Pkg
       Autoremove = 3
       # Upgrade all installed packages to the latest available version (`PKG_JOBS_UPGRADE`).
       Upgrade = 4
+
+      # Coerce a `Symbol` or `Kind` into a `Kind`. Symbols name members
+      # case-insensitively with `_` word separators (`:install`, `:remove`,
+      # `:fetch`, `:autoremove`, `:upgrade`). Raises `ArgumentError` for an
+      # unrecognized symbol.
+      def self.from(value : Symbol | Kind) : Kind
+        case value
+        in Kind   then value
+        in Symbol then parse(value.to_s)
+        end
+      end
     end
 
     # One planned change produced by the solver.
@@ -71,8 +82,9 @@ module FreeBSD::Pkg
     # -------------------------------------------------------------------
 
     # Opens a raw `Jobs` queue of *kind*, yields it, then frees it.
-    def self.open(kind : Kind, db : Database, &) : Nil
+    def self.open(kind : Kind | Symbol, db : Database, &) : Nil
       {% if flag?(:freebsd) %}
+        kind = Kind.from(kind)
         jobs_ptr = Pointer(Void).null.as(LibPkg::PkgJobs)
         rc = LibPkg.pkg_jobs_new(pointerof(jobs_ptr),
           LibPkg::PkgJobsT.new(kind.value),
@@ -93,12 +105,12 @@ module FreeBSD::Pkg
     # `#add` and `#flags=`; caller must call `#solve` and optionally `#apply`.
     def self.install(db : Database,
                      names : Array(String),
-                     flags : JobFlags | Symbol | Array = JobFlags::WithDeps,
+                     flags : JobFlags | Symbol | Enumerable(Symbol | JobFlags) = JobFlags::WithDeps,
                      match : MatchType | Symbol = MatchType::Glob,
                      &) : Nil
       open(Kind::Install, db) do |jobs|
-        jobs.flags = to_job_flags(flags)
-        jobs.add(names, to_match_type(match))
+        jobs.flags = JobFlags.from(flags)
+        jobs.add(names, MatchType.from(match))
         yield jobs
       end
     end
@@ -106,12 +118,12 @@ module FreeBSD::Pkg
     # Removes *names* from the local database.
     def self.remove(db : Database,
                     names : Array(String),
-                    flags : JobFlags | Symbol | Array = JobFlags::None,
+                    flags : JobFlags | Symbol | Enumerable(Symbol | JobFlags) = JobFlags::None,
                     match : MatchType | Symbol = MatchType::Glob,
                     &) : Nil
       open(Kind::Remove, db) do |jobs|
-        jobs.flags = to_job_flags(flags)
-        jobs.add(names, to_match_type(match))
+        jobs.flags = JobFlags.from(flags)
+        jobs.add(names, MatchType.from(match))
         yield jobs
       end
     end
@@ -119,32 +131,32 @@ module FreeBSD::Pkg
     # Fetches *names* into the package cache without installing.
     def self.fetch(db : Database,
                    names : Array(String),
-                   flags : JobFlags | Symbol | Array = JobFlags::None,
+                   flags : JobFlags | Symbol | Enumerable(Symbol | JobFlags) = JobFlags::None,
                    match : MatchType | Symbol = MatchType::Glob,
                    &) : Nil
       open(Kind::Fetch, db) do |jobs|
-        jobs.flags = to_job_flags(flags)
-        jobs.add(names, to_match_type(match))
+        jobs.flags = JobFlags.from(flags)
+        jobs.add(names, MatchType.from(match))
         yield jobs
       end
     end
 
     # Upgrades all installed packages.
     def self.upgrade(db : Database,
-                     flags : JobFlags | Symbol | Array = JobFlags::WithDeps,
+                     flags : JobFlags | Symbol | Enumerable(Symbol | JobFlags) = JobFlags::WithDeps,
                      &) : Nil
       open(Kind::Upgrade, db) do |jobs|
-        jobs.flags = to_job_flags(flags)
+        jobs.flags = JobFlags.from(flags)
         yield jobs
       end
     end
 
     # Removes packages that were installed automatically and are no longer needed.
     def self.autoremove(db : Database,
-                        flags : JobFlags | Symbol | Array = JobFlags::None,
+                        flags : JobFlags | Symbol | Enumerable(Symbol | JobFlags) = JobFlags::None,
                         &) : Nil
       open(Kind::Autoremove, db) do |jobs|
-        jobs.flags = to_job_flags(flags)
+        jobs.flags = JobFlags.from(flags)
         yield jobs
       end
     end
@@ -164,7 +176,7 @@ module FreeBSD::Pkg
       {% if flag?(:freebsd) %}
         argv = names.map(&.to_unsafe)
         rc = LibPkg.pkg_jobs_add(@handle,
-          LibPkg::MatchT.new(to_match_type(match).value),
+          LibPkg::MatchT.new(MatchType.from(match).value),
           argv.to_unsafe,
           names.size)
         check_rc!(rc, "pkg_jobs_add")
@@ -174,9 +186,9 @@ module FreeBSD::Pkg
     end
 
     # Sets job flags (replaces any previously set flags).
-    def flags=(f : JobFlags | Symbol | Array) : Nil
+    def flags=(f : JobFlags | Symbol | Enumerable(Symbol | JobFlags)) : Nil
       {% if flag?(:freebsd) %}
-        LibPkg.pkg_jobs_set_flags(@handle, to_job_flags(f).value)
+        LibPkg.pkg_jobs_set_flags(@handle, JobFlags.from(f).value)
       {% else %}
         raise UnsupportedPlatformError.new
       {% end %}

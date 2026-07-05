@@ -23,6 +23,17 @@ module FreeBSD::Pkg
       MaybeRemote = 2
       # Local database, read-only (`PKGDB_DEFAULT_READONLY`). Skips the advisory lock; use when write access is not available.
       LocalReadonly = 3
+
+      # Coerce a `Symbol` or `Type` into a `Type`. Symbols name members
+      # case-insensitively with `_` word separators (`:local`, `:remote`,
+      # `:maybe_remote`, `:local_readonly`). Raises `ArgumentError` for an
+      # unrecognized symbol.
+      def self.from(value : Symbol | Type) : Type
+        case value
+        in Type   then value
+        in Symbol then parse(value.to_s)
+        end
+      end
     end
 
     # Re-exported for backward compatibility — defined at `FreeBSD::Pkg::MatchType`.
@@ -33,7 +44,7 @@ module FreeBSD::Pkg
     @closed = false
 
     # Opens the database, yields it, and closes it when the block exits.
-    def self.open(type : Type = Type::Local, &) : Nil
+    def self.open(type : Type | Symbol = Type::Local, &) : Nil
       db = open(type)
       begin
         yield db
@@ -43,8 +54,9 @@ module FreeBSD::Pkg
     end
 
     # Opens the database and returns the handle. The caller must call `#close`.
-    def self.open(type : Type = Type::Local) : Database
+    def self.open(type : Type | Symbol = Type::Local) : Database
       {% if flag?(:freebsd) %}
+        type = Type.from(type)
         db_ptr = Pointer(Void).null.as(LibPkg::PkgDb)
         rc = LibPkg.pkgdb_open(pointerof(db_ptr), LibPkg::PkgdbT.new(type.value))
         check_rc!(rc, "pkgdb_open")
@@ -100,13 +112,13 @@ module FreeBSD::Pkg
     # Use `#query` for an `Array(Package)` with independently-owned handles.
     def each(pattern : String? = nil,
              match : FreeBSD::Pkg::MatchType | Symbol = FreeBSD::Pkg::MatchType::All,
-             flags : LoadFlags | Symbol | Array = LoadFlags::None,
+             flags : LoadFlags | Symbol | Enumerable(Symbol | LoadFlags) = LoadFlags::None,
              & : Package ->) : Nil
       {% if flag?(:freebsd) %}
         check_open!
-        it_ptr = LibPkg.pkgdb_query(@handle, pattern, LibPkg::MatchT.new(to_match_type(match).value))
+        it_ptr = LibPkg.pkgdb_query(@handle, pattern, LibPkg::MatchT.new(MatchType.from(match).value))
         raise SystemError.new("pkgdb_query returned null") if it_ptr.null?
-        it = Iterator.new(it_ptr, flags)
+        it = Iterator.new(it_ptr, LoadFlags.from(flags))
         begin
           it.each { |pkg| yield pkg }
         ensure
@@ -125,12 +137,12 @@ module FreeBSD::Pkg
     # Each package in the array owns its handle and is freed when GC'd.
     def query(pattern : String? = nil,
               match : FreeBSD::Pkg::MatchType | Symbol = FreeBSD::Pkg::MatchType::All,
-              flags : LoadFlags | Symbol | Array = LoadFlags::None) : Array(Package)
+              flags : LoadFlags | Symbol | Enumerable(Symbol | LoadFlags) = LoadFlags::None) : Array(Package)
       {% if flag?(:freebsd) %}
         check_open!
-        it_ptr = LibPkg.pkgdb_query(@handle, pattern, LibPkg::MatchT.new(to_match_type(match).value))
+        it_ptr = LibPkg.pkgdb_query(@handle, pattern, LibPkg::MatchT.new(MatchType.from(match).value))
         raise SystemError.new("pkgdb_query returned null") if it_ptr.null?
-        collect_iterator(it_ptr, to_load_flags(flags))
+        collect_iterator(it_ptr, LoadFlags.from(flags))
       {% else %}
         raise UnsupportedPlatformError.new
       {% end %}
@@ -141,13 +153,13 @@ module FreeBSD::Pkg
     def repo_query(pattern : String,
                    match : FreeBSD::Pkg::MatchType | Symbol = FreeBSD::Pkg::MatchType::Glob,
                    repo : String? = nil,
-                   flags : LoadFlags | Symbol | Array = LoadFlags::None) : Array(Package)
+                   flags : LoadFlags | Symbol | Enumerable(Symbol | LoadFlags) = LoadFlags::None) : Array(Package)
       {% if flag?(:freebsd) %}
         check_open!
         it_ptr = LibPkg.pkgdb_repo_query(@handle, pattern,
-          LibPkg::MatchT.new(to_match_type(match).value), repo)
+          LibPkg::MatchT.new(MatchType.from(match).value), repo)
         raise SystemError.new("pkgdb_repo_query returned null") if it_ptr.null?
-        collect_iterator(it_ptr, to_load_flags(flags))
+        collect_iterator(it_ptr, LoadFlags.from(flags))
       {% else %}
         raise UnsupportedPlatformError.new
       {% end %}
@@ -157,20 +169,20 @@ module FreeBSD::Pkg
     # *match* controls how *pattern* is interpreted against *field*.
     # Defaults to `MatchType::Regex` (case-insensitive substring via regex).
     def search(pattern : String,
-               field : FreeBSD::Pkg::SearchField = FreeBSD::Pkg::SearchField::NameVer,
-               sort : FreeBSD::Pkg::SearchField = FreeBSD::Pkg::SearchField::None,
+               field : FreeBSD::Pkg::SearchField | Symbol = FreeBSD::Pkg::SearchField::NameVer,
+               sort : FreeBSD::Pkg::SearchField | Symbol = FreeBSD::Pkg::SearchField::None,
                match : FreeBSD::Pkg::MatchType | Symbol = FreeBSD::Pkg::MatchType::Regex,
                repo : String? = nil,
-               flags : LoadFlags | Symbol | Array = LoadFlags::None) : Array(Package)
+               flags : LoadFlags | Symbol | Enumerable(Symbol | LoadFlags) = LoadFlags::None) : Array(Package)
       {% if flag?(:freebsd) %}
         check_open!
         it_ptr = LibPkg.pkgdb_all_search(@handle, pattern,
-          LibPkg::MatchT.new(to_match_type(match).value),
-          LibPkg::PkgdbField.new(field.value),
-          LibPkg::PkgdbField.new(sort.value),
+          LibPkg::MatchT.new(MatchType.from(match).value),
+          LibPkg::PkgdbField.new(SearchField.from(field).value),
+          LibPkg::PkgdbField.new(SearchField.from(sort).value),
           repo)
         raise SystemError.new("pkgdb_all_search returned null") if it_ptr.null?
-        collect_iterator(it_ptr, to_load_flags(flags))
+        collect_iterator(it_ptr, LoadFlags.from(flags))
       {% else %}
         raise UnsupportedPlatformError.new
       {% end %}
@@ -246,42 +258,55 @@ module FreeBSD::Pkg
     # Write lock management
     # -------------------------------------------------------------------
 
-    # Escalates the database lock to `ADVISORY`, yields, then downgrades back
-    # to `READONLY`. Required before annotation, locking, or `pkgdb_set2`
-    # operations.
+    # Obtains an `ADVISORY` lock, yields, then releases it. Required before
+    # annotation, locking, or `pkgdb_set2` operations.
+    #
+    # `pkgdb_upgrade_lock`/`pkgdb_downgrade_lock` only support the narrow
+    # `ADVISORY <-> EXCLUSIVE` transition (used internally by the `Jobs` apply
+    # step) — they are not a general lock-transition API and return
+    # `EPKG_FATAL` for any other pair, notably `READONLY -> ADVISORY`. Real
+    # `pkg` always acquires each lock kind directly via `pkgdb_obtain_lock`
+    # and releases it via `pkgdb_release_lock`, so this mirrors that.
     #
     # The database must have been opened with `Type::Local`, `Type::Remote`, or
     # `Type::MaybeRemote` (not `Type::LocalReadonly`).
     def with_advisory_lock(&) : Nil
       {% if flag?(:freebsd) %}
         check_open!
-        rc = LibPkg.pkgdb_upgrade_lock(@handle,
-          LibPkg::PkgdbLockT::Readonly, LibPkg::PkgdbLockT::Advisory)
-        check_rc!(rc, "pkgdb_upgrade_lock")
+        rc = LibPkg.pkgdb_obtain_lock(@handle, LibPkg::PkgdbLockT::Advisory)
+        check_rc!(rc, "pkgdb_obtain_lock")
         begin
           yield
         ensure
-          LibPkg.pkgdb_downgrade_lock(@handle,
-            LibPkg::PkgdbLockT::Advisory, LibPkg::PkgdbLockT::Readonly)
+          LibPkg.pkgdb_release_lock(@handle, LibPkg::PkgdbLockT::Advisory)
         end
       {% else %}
         raise UnsupportedPlatformError.new
       {% end %}
     end
 
-    # Escalates the database lock to `EXCLUSIVE`, yields, then downgrades back
-    # to `READONLY`. Required for operations that must prevent concurrent readers.
+    # Obtains an `ADVISORY` lock, escalates it to `EXCLUSIVE`, yields, then
+    # downgrades back to `ADVISORY` and releases it. Required for operations
+    # that must prevent concurrent readers. See `#with_advisory_lock` for why
+    # this goes through `ADVISORY` rather than upgrading directly from
+    # `READONLY`.
     def with_exclusive_lock(&) : Nil
       {% if flag?(:freebsd) %}
         check_open!
-        rc = LibPkg.pkgdb_upgrade_lock(@handle,
-          LibPkg::PkgdbLockT::Readonly, LibPkg::PkgdbLockT::Exclusive)
-        check_rc!(rc, "pkgdb_upgrade_lock")
+        rc = LibPkg.pkgdb_obtain_lock(@handle, LibPkg::PkgdbLockT::Advisory)
+        check_rc!(rc, "pkgdb_obtain_lock")
         begin
-          yield
+          rc = LibPkg.pkgdb_upgrade_lock(@handle,
+            LibPkg::PkgdbLockT::Advisory, LibPkg::PkgdbLockT::Exclusive)
+          check_rc!(rc, "pkgdb_upgrade_lock")
+          begin
+            yield
+          ensure
+            LibPkg.pkgdb_downgrade_lock(@handle,
+              LibPkg::PkgdbLockT::Exclusive, LibPkg::PkgdbLockT::Advisory)
+          end
         ensure
-          LibPkg.pkgdb_downgrade_lock(@handle,
-            LibPkg::PkgdbLockT::Exclusive, LibPkg::PkgdbLockT::Readonly)
+          LibPkg.pkgdb_release_lock(@handle, LibPkg::PkgdbLockT::Advisory)
         end
       {% else %}
         raise UnsupportedPlatformError.new
@@ -395,10 +420,10 @@ module FreeBSD::Pkg
 
     # Installs a local `.pkg` archive directly, bypassing the solver.
     # *location* can restrict the install root (pass `nil` for the system default).
-    def add(path : String, flags : AddFlags = AddFlags::None, location : String? = nil) : Nil
+    def add(path : String, flags : AddFlags | Symbol | Enumerable(Symbol | AddFlags) = AddFlags::None, location : String? = nil) : Nil
       {% if flag?(:freebsd) %}
         check_open!
-        rc = LibPkg.pkg_add(@handle, path, flags.value, location)
+        rc = LibPkg.pkg_add(@handle, path, AddFlags.from(flags).value, location)
         check_rc!(rc, "pkg_add")
       {% else %}
         raise UnsupportedPlatformError.new

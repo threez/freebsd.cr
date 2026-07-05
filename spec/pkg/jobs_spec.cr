@@ -18,6 +18,23 @@ describe FreeBSD::Pkg::Jobs do
         end
       end
     end
+
+    it_on_pkg_write "accepts symbol/array flags and symbol match" do
+      FreeBSD::Pkg.init do
+        FreeBSD::Pkg::Database.open(FreeBSD::Pkg::Database::Type::MaybeRemote) do |db|
+          db.with_advisory_lock do
+            FreeBSD::Pkg::Jobs.install(
+              db, ["pkg"],
+              flags: [:dry_run, :with_deps],
+              match: :exact
+            ) do |jobs|
+              jobs.solve
+              jobs.count.should be >= 0
+            end
+          end
+        end
+      end
+    end
   end
 
   describe ".upgrade dry-run" do
@@ -102,5 +119,31 @@ describe FreeBSD::Pkg::Jobs do
         end
       end
     end
+  end
+end
+
+describe FreeBSD::Pkg::JobFlags do
+  it "coerces symbols and arrays to a folded JobFlags" do
+    FreeBSD::Pkg::JobFlags.from(:dry_run).should eq(FreeBSD::Pkg::JobFlags::DryRun)
+    FreeBSD::Pkg::JobFlags.from(:with_deps).should eq(FreeBSD::Pkg::JobFlags::WithDeps)
+    FreeBSD::Pkg::JobFlags.from(FreeBSD::Pkg::JobFlags::Force).should eq(FreeBSD::Pkg::JobFlags::Force)
+    FreeBSD::Pkg::JobFlags.from([:dry_run, :with_deps]).should eq(FreeBSD::Pkg::JobFlags::DryRun | FreeBSD::Pkg::JobFlags::WithDeps)
+    FreeBSD::Pkg::JobFlags.from([:dry_run, FreeBSD::Pkg::JobFlags::Force]).should eq(FreeBSD::Pkg::JobFlags::DryRun | FreeBSD::Pkg::JobFlags::Force)
+  end
+
+  it "raises ArgumentError naming an unknown symbol" do
+    expect_raises(ArgumentError) { FreeBSD::Pkg::JobFlags.from(:bogus) }
+  end
+end
+
+describe FreeBSD::Pkg::Jobs::Kind do
+  it "coerces symbols to a Kind" do
+    FreeBSD::Pkg::Jobs::Kind.from(:install).should eq(FreeBSD::Pkg::Jobs::Kind::Install)
+    FreeBSD::Pkg::Jobs::Kind.from(:autoremove).should eq(FreeBSD::Pkg::Jobs::Kind::Autoremove)
+    FreeBSD::Pkg::Jobs::Kind.from(FreeBSD::Pkg::Jobs::Kind::Upgrade).should eq(FreeBSD::Pkg::Jobs::Kind::Upgrade)
+  end
+
+  it "raises ArgumentError naming an unknown symbol" do
+    expect_raises(ArgumentError) { FreeBSD::Pkg::Jobs::Kind.from(:bogus) }
   end
 end

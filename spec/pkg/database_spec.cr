@@ -29,6 +29,14 @@ describe FreeBSD::Pkg::Database do
         end
       end
     end
+
+    it_on_pkg "opens with a symbol type" do
+      FreeBSD::Pkg.init do
+        FreeBSD::Pkg::Database.open(:local) do |db|
+          db.closed?.should be_false
+        end
+      end
+    end
   end
 
   describe "#query" do
@@ -69,6 +77,15 @@ describe FreeBSD::Pkg::Database do
         end
       end
     end
+
+    it_on_pkg "accepts symbol match and array flags" do
+      FreeBSD::Pkg.init do
+        FreeBSD::Pkg::Database.open do |db|
+          pkgs = db.query("pkg", match: :exact, flags: [:categories, :licenses])
+          pkgs.size.should eq(1)
+        end
+      end
+    end
   end
 
   describe "#each" do
@@ -78,6 +95,16 @@ describe FreeBSD::Pkg::Database do
           count = 0
           db.each { count += 1 }
           count.should be > 0
+        end
+      end
+    end
+
+    it_on_pkg "accepts symbol match and array flags" do
+      FreeBSD::Pkg.init do
+        FreeBSD::Pkg::Database.open do |db|
+          count = 0
+          db.each("pkg", match: :exact, flags: [:categories]) { count += 1 }
+          count.should eq(1)
         end
       end
     end
@@ -134,5 +161,45 @@ describe FreeBSD::Pkg::Database do
         end
       end
     end
+  end
+end
+
+describe FreeBSD::Pkg::Database::Type do
+  it "coerces symbols to a Type" do
+    FreeBSD::Pkg::Database::Type.from(:local).should eq(FreeBSD::Pkg::Database::Type::Local)
+    FreeBSD::Pkg::Database::Type.from(:remote).should eq(FreeBSD::Pkg::Database::Type::Remote)
+    FreeBSD::Pkg::Database::Type.from(:maybe_remote).should eq(FreeBSD::Pkg::Database::Type::MaybeRemote)
+    FreeBSD::Pkg::Database::Type.from(:local_readonly).should eq(FreeBSD::Pkg::Database::Type::LocalReadonly)
+    FreeBSD::Pkg::Database::Type.from(FreeBSD::Pkg::Database::Type::Remote).should eq(FreeBSD::Pkg::Database::Type::Remote)
+  end
+
+  it "raises ArgumentError naming an unknown symbol" do
+    expect_raises(ArgumentError) { FreeBSD::Pkg::Database::Type.from(:bogus) }
+  end
+end
+
+describe FreeBSD::Pkg::MatchType do
+  it "coerces symbols to a MatchType" do
+    FreeBSD::Pkg::MatchType.from(:all).should eq(FreeBSD::Pkg::MatchType::All)
+    FreeBSD::Pkg::MatchType.from(:exact).should eq(FreeBSD::Pkg::MatchType::Exact)
+    FreeBSD::Pkg::MatchType.from(:glob).should eq(FreeBSD::Pkg::MatchType::Glob)
+    FreeBSD::Pkg::MatchType.from(:regex).should eq(FreeBSD::Pkg::MatchType::Regex)
+    FreeBSD::Pkg::MatchType.from(FreeBSD::Pkg::MatchType::Glob).should eq(FreeBSD::Pkg::MatchType::Glob)
+  end
+
+  it "raises ArgumentError naming an unknown symbol" do
+    expect_raises(ArgumentError) { FreeBSD::Pkg::MatchType.from(:bogus) }
+  end
+end
+
+describe FreeBSD::Pkg::SearchField do
+  it "coerces symbols to a SearchField" do
+    FreeBSD::Pkg::SearchField.from(:name_ver).should eq(FreeBSD::Pkg::SearchField::NameVer)
+    FreeBSD::Pkg::SearchField.from(:comment_desc).should eq(FreeBSD::Pkg::SearchField::CommentDesc)
+    FreeBSD::Pkg::SearchField.from(FreeBSD::Pkg::SearchField::Origin).should eq(FreeBSD::Pkg::SearchField::Origin)
+  end
+
+  it "raises ArgumentError naming an unknown symbol" do
+    expect_raises(ArgumentError) { FreeBSD::Pkg::SearchField.from(:bogus) }
   end
 end

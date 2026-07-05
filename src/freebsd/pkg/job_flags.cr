@@ -43,5 +43,22 @@ module FreeBSD::Pkg
     KeepFiles = 32768
     # Register the package in the database without extracting files (`PKG_FLAG_REGISTER_ONLY`).
     RegisterOnly = 65536
+
+    # Coerce a `Symbol`, a `JobFlags`, or an `Enumerable` of either into a
+    # single `JobFlags`. Symbols name members case-insensitively with `_`
+    # word separators (`:with_deps`, `:force`); an array is OR-folded so
+    # `[:with_deps, :force]` replaces `JobFlags::WithDeps | JobFlags::Force`.
+    # Raises `ArgumentError` naming a bad symbol.
+    def self.from(value : Symbol | JobFlags) : JobFlags
+      case value
+      in JobFlags then value
+      in Symbol   then parse(value.to_s)
+      end
+    end
+
+    # :ditto:
+    def self.from(values : Enumerable(Symbol | JobFlags)) : JobFlags
+      values.reduce(JobFlags::None) { |acc, v| acc | from(v) }
+    end
   end
 end

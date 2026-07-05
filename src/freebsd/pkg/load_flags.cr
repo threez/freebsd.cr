@@ -46,5 +46,23 @@ module FreeBSD::Pkg
     Provides = 16384
     # Load abstract `requires` strings.
     Requires = 32768
+
+    # Coerce a `Symbol`, a `LoadFlags`, or an `Enumerable` of either into a
+    # single `LoadFlags`. Symbols name members case-insensitively with `_`
+    # word separators (`:deps`, `:shlibs_required`); an array is OR-folded
+    # so `[:deps, :annotations]` replaces
+    # `LoadFlags::Deps | LoadFlags::Annotations`. Raises `ArgumentError`
+    # naming a bad symbol.
+    def self.from(value : Symbol | LoadFlags) : LoadFlags
+      case value
+      in LoadFlags then value
+      in Symbol    then parse(value.to_s)
+      end
+    end
+
+    # :ditto:
+    def self.from(values : Enumerable(Symbol | LoadFlags)) : LoadFlags
+      values.reduce(LoadFlags::None) { |acc, v| acc | from(v) }
+    end
   end
 end

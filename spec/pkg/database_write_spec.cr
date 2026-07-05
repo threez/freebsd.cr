@@ -107,3 +107,17 @@ describe FreeBSD::Pkg::Database do
     end
   end
 end
+
+describe FreeBSD::Pkg::AddFlags do
+  it "coerces symbols and arrays to a folded AddFlags" do
+    FreeBSD::Pkg::AddFlags.from(:force).should eq(FreeBSD::Pkg::AddFlags::Force)
+    FreeBSD::Pkg::AddFlags.from(:no_script).should eq(FreeBSD::Pkg::AddFlags::NoScript)
+    FreeBSD::Pkg::AddFlags.from(FreeBSD::Pkg::AddFlags::Automatic).should eq(FreeBSD::Pkg::AddFlags::Automatic)
+    FreeBSD::Pkg::AddFlags.from([:force, :automatic]).should eq(FreeBSD::Pkg::AddFlags::Force | FreeBSD::Pkg::AddFlags::Automatic)
+    FreeBSD::Pkg::AddFlags.from([:force, FreeBSD::Pkg::AddFlags::Automatic]).should eq(FreeBSD::Pkg::AddFlags::Force | FreeBSD::Pkg::AddFlags::Automatic)
+  end
+
+  it "raises ArgumentError naming an unknown symbol" do
+    expect_raises(ArgumentError) { FreeBSD::Pkg::AddFlags.from(:bogus) }
+  end
+end

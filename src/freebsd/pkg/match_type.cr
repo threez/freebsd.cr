@@ -9,6 +9,17 @@ module FreeBSD::Pkg
     Glob = 2
     # POSIX extended regular expression on the relevant field.
     Regex = 3
+
+    # Coerce a `Symbol` or `MatchType` into a `MatchType`. Symbols name
+    # members case-insensitively with `_` word separators (`:all`,
+    # `:exact`, `:glob`, `:regex`). Raises `ArgumentError` for an
+    # unrecognized symbol.
+    def self.from(value : Symbol | MatchType) : MatchType
+      case value
+      in MatchType then value
+      in Symbol    then parse(value.to_s)
+      end
+    end
   end
 
   # Field to search or sort by in `Database#search`.
@@ -29,5 +40,16 @@ module FreeBSD::Pkg
     CommentDesc = 6
     # Port flavour.
     Flavor = 7
+
+    # Coerce a `Symbol` or `SearchField` into a `SearchField`. Symbols name
+    # members case-insensitively with `_` word separators (`:name_ver`,
+    # `:comment_desc`, etc). Raises `ArgumentError` for an unrecognized
+    # symbol.
+    def self.from(value : Symbol | SearchField) : SearchField
+      case value
+      in SearchField then value
+      in Symbol      then parse(value.to_s)
+      end
+    end
   end
 end

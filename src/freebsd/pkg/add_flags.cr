@@ -1,6 +1,14 @@
 module FreeBSD::Pkg
   # Bitmask controlling `Database#add` (direct local archive install).
   #
+  # Combine values with `|`, or pass a symbol / array of symbols:
+  #
+  # ```
+  # db.add("/path/to/pkg.txz", flags: :force)
+  # db.add("/path/to/pkg.txz", flags: [:force, :automatic])
+  # db.add("/path/to/pkg.txz", flags: AddFlags::Force | AddFlags::Automatic)
+  # ```
+  #
   # Note: values are explicit because `PKG_ADD_AUTOMATIC` is bit 2 (value 4),
   # with bit 1 intentionally absent in the C header.
   # `@[Flags]` auto-assigns sequential powers of 2 which would be incorrect here.
@@ -22,5 +30,22 @@ module FreeBSD::Pkg
     NoExec = 128
     # Register the package in the database without extracting files (`PKG_ADD_REGISTER_ONLY`).
     RegisterOnly = 256
+
+    # Coerce a `Symbol`, an `AddFlags`, or an `Enumerable` of either into a
+    # single `AddFlags`. Symbols name members case-insensitively with `_`
+    # word separators (`:force`, `:no_script`); an array is OR-folded so
+    # `[:force, :automatic]` replaces `AddFlags::Force | AddFlags::Automatic`.
+    # Raises `ArgumentError` naming a bad symbol.
+    def self.from(value : Symbol | AddFlags) : AddFlags
+      case value
+      in AddFlags then value
+      in Symbol   then parse(value.to_s)
+      end
+    end
+
+    # :ditto:
+    def self.from(values : Enumerable(Symbol | AddFlags)) : AddFlags
+      values.reduce(AddFlags::None) { |acc, v| acc | from(v) }
+    end
   end
 end
