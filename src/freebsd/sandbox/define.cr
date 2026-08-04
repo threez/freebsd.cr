@@ -24,10 +24,19 @@ module FreeBSD::Sandbox
   # 2. **post-runtime** — the rest runs once, guarded by
   #    `unless FreeBSD::Casper::Helper.is_helper` so a helper child never
   #    re-opens a Casper channel (the `cap_init` / `EDEADLK` trap):
-  #    a. Casper services: `net`, `pwd`, `grp`, `sysctl`, `syslog`, `fileargs`.
-  #    b. `open(name, Type) { handle }` — run the block as root, store the handle.
+  #    a. `bind(name, host, port)` — open a privileged listener as root, store
+  #       it. Always emitted before step (b), **regardless of the order the
+  #       caller wrote directives in the block**: once a `net`/`connect_dns`
+  #       policy is installed, `casper/integrate/net`'s `Socket#bind` override
+  #       routes *every* bind (including a `bind` directive's own listener
+  #       bind, via plain `Socket#bind`) through `cap_bind` — and a
+  #       `net`/`connect_dns` policy never grants `Mode::Bind`, so that bind
+  #       would be rejected with `cap_bind: Capabilities insufficient`. Moving
+  #       every `bind` ahead of Casper service installation avoids this
+  #       unconditionally.
+  #    b. Casper services: `net`, `pwd`, `grp`, `sysctl`, `syslog`, `fileargs`.
+  #    c. `open(name, Type) { handle }` — run the block as root, store the handle.
   #       `directory(name, path_or_paths)` — pre-open directory fd(s) for openat.
-  #    c. `bind(name, host, port)` — open a privileged listener as root, store it.
   #    d. `user(...)` — privilege drop (groups → chroot → setgid → setuid → scrub).
   #    e. `FreeBSD::Capsicum.sandbox!` — enter capability mode.
   #
@@ -82,6 +91,10 @@ module FreeBSD::Sandbox
   #   `Sandbox.<name> : TCPServer`. The listener fd is rights-limited before
   #   `cap_enter`: `rights:` overrides, `rights: false` skips, and when omitted
   #   `DEFAULT_LISTENER_RIGHTS` (a known-good accept/event-loop set) is applied.
+  #   Always binds before any `net`/`connect_dns` policy is installed
+  #   (phase 2a, see above) no matter where `bind` appears in the block — a
+  #   `net`/`connect_dns` policy is never permissive enough to allow this bind
+  #   once installed.
   #
   # `rights:` elements may be `Symbol`s (`:accept`, `:read`, `:fstat`, …) or
   # `Capsicum::Capability::Right` constants, freely mixed in one array.
@@ -197,8 +210,26 @@ module FreeBSD::Sandbox
       # One guard for the whole block: a pdfork helper child must not run any
       # of this (it owns no Casper channel; cap_init there deadlocks).
       unless FreeBSD::Casper::Helper.is_helper
+        # `bind` directives always run before any Casper net-policy directive
+        # (`net`/`connect_dns`), regardless of the order the caller wrote them
+        # in the block. `casper/integrate/net`'s `Socket#bind` override routes
+        # *every* bind through `cap_bind` once any `system.net` policy is
+        # installed — including a `bind` directive's own privileged listener
+        # bind, which happens via plain `Socket#bind` inside `__bind_listener`.
+        # A `net`/`connect_dns` policy only ever grants `Name2Addr`/`ConnectDNS`
+        # /`Connect`, never `Bind`, so if the policy is installed first,
+        # `__bind_listener`'s bind is rejected with `cap_bind: Capabilities
+        # insufficient` — a real regression, reproduced by
+        # spec/sandbox/http_proxy_spec.cr requiring `connect_dns` before
+        # `bind` in its fixture. Reordering here (rather than just documenting
+        # "write bind first") makes every caller safe regardless of block
+        # order, matching `__bind_listener`'s own doc comment that it "must
+        # not depend on any installed Casper policy".
+        {% bind_directives = directives.select { |e| e.is_a?(Call) && e.name == "bind" } %}
+        {% other_directives = directives.reject { |e| e.is_a?(Call) && e.name == "bind" } %}
+        {% ordered_directives = bind_directives + other_directives %}
         {% privdrop = nil %}
-        {% for expr in directives %}
+        {% for expr in ordered_directives %}
           {% if expr.is_a?(Call) %}
             {% if expr.name == "user" %}
               {% privdrop = expr %}
@@ -328,6 +359,14 @@ module FreeBSD::Sandbox
   # resolution. `host` must be a literal IP (e.g. "0.0.0.0", "127.0.0.1", "::").
   # Avoiding `getaddrinfo` matters because an installed Casper net policy routes
   # DNS through the limited helper — a `bind` during setup must not depend on it.
+  #
+  # This also must not depend on any *bind* policy: once `casper/integrate/net`
+  # is required and a Casper net service is installed, `Socket#bind` (called by
+  # `server.bind` below) is globally routed through `cap_bind`, and a
+  # `net`/`connect_dns` policy never grants `Mode::Bind`. `define`'s phase 2
+  # accordingly always emits every `bind` directive before any `net`/
+  # `connect_dns` directive, so by the time this runs no net service is
+  # installed yet and `server.bind` takes the ordinary unrestricted path.
   def self.__bind_listener(host : String, port : Int) : ::TCPServer
     addr = ::Socket::IPAddress.new(host, port.to_i)
     server = ::TCPServer.new(addr.family)
