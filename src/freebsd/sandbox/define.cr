@@ -1,4 +1,6 @@
 require "socket"
+require "http/client"
+require "openssl"
 
 module FreeBSD::Sandbox
   # Default Capsicum rights applied to a `bind` listener fd when the directive
@@ -11,6 +13,77 @@ module FreeBSD::Sandbox
   DEFAULT_LISTENER_RIGHTS = [
     :accept, :listen, :getsockname, :getsockopt, :event, :fcntl,
   ] of Symbol | ::FreeBSD::Capsicum::Capability::Right
+
+  # Shape shared by every shard (`kms`, `txmail`, …) that accepts an
+  # injectable HTTP client constructor as a `client_builder:` argument, so a
+  # `tls_context` directive's `.http_client_builder` can be passed straight
+  # through. Declared unconditionally (not gated on the `tls_context`
+  # directive being used) since shards reference this type in their own
+  # constructor signatures whether or not a given program opts into the
+  # directive.
+  alias ClientBuilder = Proc(::URI, ::Time::Span, ::HTTP::Client)
+
+  @@tls_context : ::OpenSSL::SSL::Context::Client? = nil
+
+  # Builds one `OpenSSL::SSL::Context::Client` now, while the filesystem is
+  # still reachable, and stores it for `.tls_context`/`.http_client_builder`.
+  # Idempotent — a second call (e.g. from a `tls_context` directive inside a
+  # later `Sandbox.define` block, after this was already called standalone
+  # earlier in the program) is a no-op, so both entry points are always safe
+  # to use together.
+  #
+  # Every `OpenSSL::SSL::Context::Client#initialize` calls
+  # `set_default_verify_paths`, which reads the OS CA bundle from disk at
+  # construction time — there is no process-wide caching of that read inside
+  # OpenSSL/Crystal, so a context built *after* cap_enter can never load a
+  # trust store and any handshake through it fails with "certificate verify
+  # failed". Capsicum's file-open patch (`capsicum/integrate/file.cr`) cannot
+  # help here either: it only intercepts `Crystal::System::File`, and libssl's
+  # CA-bundle read is C code that never goes through that layer.
+  #
+  # Callable standalone, independent of any `Sandbox.define` call — needed by
+  # programs whose other pre-sandbox setup (e.g. constructing an HTTP client
+  # a route/controller graph depends on) must run *before* `Sandbox.define`
+  # even starts, so `Sandbox.define`'s own `tls_context` directive would run
+  # too late for them. Call this early instead, then use `.http_client_builder`
+  # wherever needed, before ever reaching a `Sandbox.define` call (if any).
+  def self.prime_tls_context! : Nil
+    @@tls_context ||= ::OpenSSL::SSL::Context::Client.new
+  end
+
+  # The `OpenSSL::SSL::Context::Client` built by `.prime_tls_context!` (called
+  # standalone, or via the `tls_context` directive inside `Sandbox.define`),
+  # before cap_enter, so its CA verify paths were loaded while the filesystem
+  # was still reachable. Raises if accessed before either has run.
+  #
+  # Prefer `.http_client_builder` over calling this directly — it wraps this
+  # context in a `ClientBuilder` proc shaped for shards like `kms` and
+  # `txmail` that accept an injectable builder.
+  def self.tls_context : ::OpenSSL::SSL::Context::Client
+    @@tls_context || raise "FreeBSD::Sandbox.tls_context accessed before .prime_tls_context! (or the tls_context directive) ran"
+  end
+
+  # A builder proc for shards/clients that accept an injectable
+  # `Proc(URI, Time::Span, HTTP::Client)` — pass this straight through as
+  # their `client_builder:` argument so every `HTTP::Client` they build
+  # reuses the one `tls_context` primed before cap_enter, instead of each
+  # constructing (and re-reading the CA bundle for) its own. Only applied for
+  # "https" URIs — `HTTP::Client.new` raises `ArgumentError` if a TLS context
+  # is given for a plain "http" one, so the primed context is passed only
+  # when the scheme actually needs it, letting one builder serve either
+  # scheme (e.g. a dev http:// KMS_URL vs. a production https:// one).
+  #
+  # Requires `.prime_tls_context!` (standalone, or via the `tls_context`
+  # directive) to have run first.
+  def self.http_client_builder(timeout : ::Time::Span) : ClientBuilder
+    context = tls_context
+    ->(uri : ::URI, t : ::Time::Span) {
+      client = uri.scheme == "https" ? ::HTTP::Client.new(uri, tls: context) : ::HTTP::Client.new(uri)
+      client.connect_timeout = t
+      client.read_timeout = t
+      client
+    }
+  end
 
   # Declare and enter a sandbox in one place. The block contains *directives*
   # (plain calls) describing the process; the macro emits them in the one
@@ -59,7 +132,17 @@ module FreeBSD::Sandbox
   #   `ports` is an `Int`/`String` or array (`connect_dns "example.com", [80, 443]`).
   # - `pwd { |s| ... }`, `grp { |s| ... }`, `sysctl { |s| ... }` — lookups.
   # - `tz_data` — prime the local timezone (`/etc/localtime`) before cap_enter so
-  #   `Time.local` keeps working in the sandbox. No arguments.
+  #   `Time.local` keeps working in the sandbox. No arguments. Idempotent
+  #   shorthand for `Sandbox.prime_tz_data!` — call that directly instead if
+  #   priming needs to happen before some other pre-sandbox setup that itself
+  #   must run before `Sandbox.define` starts (see `.prime_tls_context!`'s doc
+  #   comment for why that ordering need can arise).
+  # - `tls_context` — build one `OpenSSL::SSL::Context::Client` before cap_enter
+  #   so its default CA verify paths (loaded from disk at construction time) are
+  #   readable, then exposed via `Sandbox.tls_context` and
+  #   `Sandbox.http_client_builder(timeout: ...)`. No arguments. Idempotent
+  #   shorthand for `Sandbox.prime_tls_context!` — see that method's doc
+  #   comment for why and when to call it standalone instead.
   # - `syslog ident, options, facility` — `system.syslog`.
   # - `fileargs paths, ...` — `system.fileargs`.
   # - `open(name, Type, rights: [...]?) { handle }` — open a resource as root;
@@ -248,7 +331,9 @@ module FreeBSD::Sandbox
             {% elsif expr.name == "fileargs" %}
               FreeBSD::Casper.register_fileargs({{ expr.args.splat }})
             {% elsif expr.name == "tz_data" %}
-              ::FreeBSD::Sandbox.__prime_tz
+              ::FreeBSD::Sandbox.prime_tz_data!
+            {% elsif expr.name == "tls_context" %}
+              ::FreeBSD::Sandbox.prime_tls_context!
             {% elsif expr.name == "open" %}
               ::FreeBSD::Sandbox.__set_{{ expr.args[0].id }}({{ expr.block.body }})
               {% rights = nil %}
@@ -326,13 +411,19 @@ module FreeBSD::Sandbox
     LibC.getgid
   end
 
-  # :nodoc:
   # Prime the local timezone cache by forcing `Time::Location.local` to load
   # `/etc/localtime` now, while the filesystem is still reachable. The result is
   # memoized (`Time::Location.class_property local`), so every later `Time.local`
-  # in the sandboxed body reuses it without touching the filesystem. Run as a
-  # `tz_data` directive before privdrop / cap_enter.
-  def self.__prime_tz : Nil
+  # reuses it without touching the filesystem — including from a sandboxed body.
+  # Idempotent (delegates to `Time::Location.local`'s own memoization, so a
+  # second call — e.g. from a `tz_data` directive after this already ran
+  # standalone — is a cheap no-op).
+  #
+  # Callable standalone, independent of any `Sandbox.define` call — see
+  # `.prime_tls_context!` for why a program might need to prime before
+  # `Sandbox.define` even starts. Use the `tz_data` directive instead when
+  # priming right before `Sandbox.define`'s own cap_enter is early enough.
+  def self.prime_tz_data! : Nil
     Time::Location.local
   end
 
