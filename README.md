@@ -10,6 +10,7 @@ you explicitly require the sub-library you need:
 require "freebsd/pkg"       # libpkg — package management
 require "freebsd/capsicum"  # Capsicum — capability mode sandboxing
 require "freebsd/casper"    # libcasper — privilege-separated services
+require "freebsd/sandbox"   # Sandbox.define — one-shot sandboxed process declaration
 require "freebsd/nvlist"    # libnv — named-value lists
 require "freebsd/privdrop"  # setuid/setgid/chroot helpers
 require "freebsd/audit"     # libbsm — BSM audit event writer
@@ -33,13 +34,18 @@ Mix and match only what your application needs.
   process delegate privileged work to a trusted helper. Includes transparent
   integrations for Crystal's stdlib (`Socket::Addrinfo`, `File`, `Log`).
 
-- **`freebsd/nvlist`** — libnv encoder/decoder. Named-value lists used
+- **`freebsd/sandbox`** — `Sandbox.define`, a declarative one-block front door
+  for sandboxing a whole process: privilege drop, Casper resources, bound
+  ports, and pre-opened files/directories, run in the one mandatory order.
+  Also covers pre-sandbox priming (`tz_data`, `tls_context`) for stdlib/OpenSSL
+  state that must be loaded from disk before `cap_enter`.
+
+- **`freebsd/nvlist`** — [libnv] encoder/decoder. Named-value lists used
   internally by libcasper and the FreeBSD kernel for structured data exchange.
 
-- **`freebsd/privdrop`** — privilege-drop helpers (`setuid`, `setgid`,
-  `setgroups`, `initgroups`, `chroot`) with correct-ordering documentation and
-  environment scrubbing. Use before entering capability mode to relinquish
-  root cleanly.
+- **`freebsd/privdrop`** — [setuid]/setgid/`setgroups`/`initgroups`/chroot
+  privilege-drop helpers with correct-ordering documentation and environment
+  scrubbing. Use before entering capability mode to relinquish root cleanly.
 
 - **`freebsd/audit`** — [libbsm] / [OpenBSM] audit event writer. Lets Crystal
   applications emit structured BSM audit records to FreeBSD's audit subsystem.
@@ -50,6 +56,8 @@ Mix and match only what your application needs.
 [libpkg]: https://man.freebsd.org/cgi/man.cgi?query=pkg
 [Capsicum]: https://www.cl.cam.ac.uk/research/security/capsicum/
 [libcasper]: https://man.freebsd.org/cgi/man.cgi?query=libcasper
+[libnv]: https://man.freebsd.org/cgi/man.cgi?query=libnv
+[setuid]: https://man.freebsd.org/cgi/man.cgi?query=setuid
 [libbsm]: https://man.freebsd.org/cgi/man.cgi?query=libbsm
 [OpenBSM]: https://github.com/openbsm/openbsm
 [OCSF]: https://schema.ocsf.io
@@ -85,6 +93,7 @@ See each sub-library's README for full API documentation and examples:
 - [`freebsd/pkg`](src/freebsd/pkg.cr)
 - [`freebsd/capsicum`](src/freebsd/capsicum/README.md)
 - [`freebsd/casper`](src/freebsd/casper/README.md)
+- [`freebsd/sandbox`](src/freebsd/sandbox/README.md)
 - [`freebsd/nvlist`](src/freebsd/nvlist/README.md)
 - [`freebsd/privdrop`](src/freebsd/privdrop/README.md)
 - [`freebsd/audit`](src/freebsd/audit/README.md)

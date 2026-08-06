@@ -16,77 +16,19 @@ require "freebsd/casper"
 
 ## One-shot sandbox declaration — `FreeBSD::Sandbox.define`
 
-The pieces below (helpers, services, privilege drop, `cap_enter`) each fire at a
-different point in the process lifecycle and must run in one specific order:
-pre-runtime `pdfork` helpers, then post-runtime resource setup, then the
-privilege drop, then capability mode. Wiring that by hand is fiddly and easy to
-get subtly wrong (a helper child that re-opens a Casper channel deadlocks).
+Declaring a whole sandboxed process by hand means memorising a strict phase
+order (pre-runtime `pdfork` helpers → post-runtime resource setup → privilege
+drop → `cap_enter`) and wiring up helper-child guards yourself — fiddly and
+easy to get subtly wrong. `FreeBSD::Sandbox.define`, in the sibling
+`freebsd/sandbox` sub-library, is the recommended front door: declare the
+user to drop to, the Casper resources to use, the ports to bind, and any
+resources to open up front, all in one block, and the macro runs every phase
+in the mandatory order for you.
 
-`FreeBSD::Sandbox.define` is the recommended front door: declare the whole
-process — the user it drops to, the Casper resources it uses, the ports it
-binds, and any resources it opens up front — in one block. The macro runs the
-phases in the mandatory order and guards helper children automatically. The
-program body after the block runs fully sandboxed.
-
-```crystal
-require "freebsd/sandbox"
-require "freebsd/casper/net"
-require "freebsd/casper/integrate/dns"
-require "freebsd/casper/integrate/net"
-require "http/client"
-
-FreeBSD::Sandbox.define do
-  user "nobody", chroot: "/var/empty"     # privilege drop target
-
-  audit_helper                            # pre-runtime pdfork helper
-
-  connect_dns "example.com", 80           # resolve + connect to this host only
-
-  open("db", File, rights: [:read, :write, :fstat]) {         # opened as root
-    File.open("/var/db/app.sqlite", "r+")
-  }
-  bind "listener", "0.0.0.0", 8080                            # privileged bind
-end
-
-# ---- everything below runs sandboxed (capability mode, dropped to nobody) ----
-
-# Each open/bind directive generates a typed accessor named after it. A wrong
-# name or wrong type is a compile error — no runtime cast.
-db       = FreeBSD::Sandbox.db       # => File   (opened before the drop)
-listener = FreeBSD::Sandbox.listener # => TCPServer
-
-HTTP::Client.get("http://example.com/")  # policy-checked through the net helper
-```
-
-Phase order the macro emits:
-
-| Phase | What runs |
-| --- | --- |
-| pre-runtime | `audit_helper` / `helper` pdfork helpers (before the Crystal runtime) |
-| post-runtime | Casper services (`net`/`pwd`/`grp`/`sysctl`/`syslog`/`fileargs`), `open` blocks (as root), privileged `bind` |
-| rights | `cap_rights_limit` on `open`/`bind` fds declaring `rights:` (a `bind` with no `rights:` gets a known-good default listener set) |
-| privdrop | `user` → groups → chroot → setgid → setuid → scrub |
-| sandbox | `cap_enter` |
-
-The whole post-runtime → sandbox sequence is wrapped in a single
-`unless FreeBSD::Casper::Helper.is_helper` guard, so a `pdfork` helper child
-never re-opens a Casper channel — the fix for the `cap_init`/`EDEADLK` deadlock,
-written once instead of per service.
-
-Directives: `user name|uid:/gid:, chroot:, scrub_env:`, `audit_helper`,
-`helper(name) { |server| ... }`,
-`net(mode) { |b| ... }` (mode is a `Mode`, `Symbol`, or array — e.g.
-`net([:name2addr, :connect_dns])`),
-`connect_dns host, ports` / `connect_dns({host => ports, …})` (shorthand for the
-resolve-and-connect policy; `ports` is an `Int`/`String` or array),
-`pwd`/`grp`/`sysctl`,
-`syslog(...)`, `fileargs(...)`, `open(name, Type, rights: […]?) { handle }`,
-`bind name, host, port, rights: […]?`. The optional `rights:` list (symbols like
-`:read`/`:accept` and/or `Right` constants) is applied to the resource's fd via
-`cap_rights_limit` before `cap_enter`; on `open` the `Type` must be fd-bearing
-(`IO::FileDescriptor` or `Socket`) or it is a compile error, and on `bind` an
-omitted `rights:` applies a known-good listener default (`rights: false` skips).
-The lower-level building blocks documented below are exactly what `define`
+See **[`freebsd/sandbox`](../sandbox/README.md)** for the full directive
+reference, including `tz_data`/`tls_context` pre-sandbox priming and the
+`http_client_builder` helper for shards like `kms`/`txmail`. The lower-level
+building blocks documented below in this file are exactly what `define`
 composes; reach for them directly when you need finer control than the
 declaration offers.
 
