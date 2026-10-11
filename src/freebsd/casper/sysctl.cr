@@ -151,8 +151,8 @@ module FreeBSD::Casper
       _chan    = FreeBSD::Casper::Channel.open
       _sysctl  = _chan.sysctl
       {% if block %}
-        {{block.args[0].id}} = _sysctl
-        {{block.body}}
+        {{ block.args[0].id }} = _sysctl
+        {{ block.body }}
       {% end %}
       _chan.close
       FreeBSD::Casper.install_sysctl(_sysctl)

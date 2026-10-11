@@ -175,8 +175,8 @@ module FreeBSD::Casper
       _chan = FreeBSD::Casper::Channel.open
       _pwd  = _chan.pwd
       {% if block %}
-        {{block.args[0].id}} = _pwd
-        {{block.body}}
+        {{ block.args[0].id }} = _pwd
+        {{ block.body }}
       {% end %}
       _chan.close
       FreeBSD::Casper.install_pwd(_pwd)

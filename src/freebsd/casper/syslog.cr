@@ -190,7 +190,7 @@ module FreeBSD::Casper
   macro register_syslog(ident, options = FreeBSD::Casper::Service::Syslog::LogOption::None, facility = FreeBSD::Casper::Service::Syslog::Facility::User)
     \{% if flag?(:freebsd) || flag?(:dragonfly) %}
       # Plain top-level install (runtime up); no main_user_code override. See net.cr.
-      FreeBSD::Casper.install_syslog!({{ident}}, {{options}}, {{facility}})
+      FreeBSD::Casper.install_syslog!({{ ident }}, {{ options }}, {{ facility }})
     \{% end %}
   end
 end

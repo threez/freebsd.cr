@@ -172,8 +172,8 @@ module FreeBSD::Casper
       _chan = FreeBSD::Casper::Channel.open
       _grp  = _chan.grp
       {% if block %}
-        {{block.args[0].id}} = _grp
-        {{block.body}}
+        {{ block.args[0].id }} = _grp
+        {{ block.body }}
       {% end %}
       _chan.close
       FreeBSD::Casper.install_grp(_grp)

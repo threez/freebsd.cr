@@ -87,7 +87,7 @@ module FreeBSD::Casper
       # Encode only the fields that are non-nil (plus the mandatory `kind`).
       # Skipping nil fields avoids null-typed nvlist entries that confuse
       # the string/number readers on decode.
-      def to_nvlist_fields(b : FreeBSD::NVList::Builder) : Nil # ameba:disable Metrics/CyclomaticComplexity
+      def to_nvlist_fields(b : FreeBSD::NVList::Builder) : Nil
         b.field("kind", @kind)
         b.field("text", @text) if @text
         b.field("uid", @uid) if @uid
@@ -379,7 +379,7 @@ module FreeBSD::Casper
     #    override that pdforks before the runtime. In the helper child the block
     #    runs (register handler + serve_typed). In the parent the client socket
     #    is stored in Helper._clients[name].
-    FreeBSD::Casper::Helper.register(name: {{name}}) do |_audit_server|
+    FreeBSD::Casper::Helper.register(name: {{ name }}) do |_audit_server|
       _audit_server.on(FreeBSD::Casper::AuditHelper::Request) do |req|
         \{% if flag?(:freebsd) || flag?(:dragonfly) %}
           begin
@@ -467,7 +467,7 @@ module FreeBSD::Casper
     \{% if flag?(:freebsd) || flag?(:dragonfly) %}
       unless FreeBSD::Casper::Helper.is_helper
         FreeBSD::Casper.install_audit_helper(
-          FreeBSD::Casper::Helper.client({{name}})
+          FreeBSD::Casper::Helper.client({{ name }})
         )
       end
     \{% end %}

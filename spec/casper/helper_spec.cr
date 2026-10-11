@@ -91,10 +91,10 @@ describe FreeBSD::Casper::Helper do
       client = FreeBSD::Casper::Helper.spawn(name: "calc") do |server|
         server.on(CalcAdd) { |r| CalcResult.new(value: r.a + r.b) }
         server.on(CalcMul) { |r| CalcResult.new(value: r.a * r.b) }
-        server.on(CalcDiv) { |r|
+        server.on(CalcDiv) do |r|
           raise ArgumentError.new("division by zero") if r.b == 0
           CalcResult.new(value: r.a // r.b)
-        }
+        end
         server.serve_typed
       end
       begin
