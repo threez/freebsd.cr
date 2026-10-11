@@ -137,7 +137,7 @@ describe FreeBSD::Pkg::Database do
             result.name.should_not be_empty
           end
           # nil is also valid (path may not be in db on minimal installs)
-          result.is_a?(FreeBSD::Pkg::Package | Nil).should be_true
+          result.is_a?(FreeBSD::Pkg::Package?).should be_true
         end
       end
     end

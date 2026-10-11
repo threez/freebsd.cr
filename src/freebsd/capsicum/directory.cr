@@ -467,10 +467,10 @@ module FreeBSD::Capsicum
   # `.`/`..` without consulting the cwd, which `getcwd(2)` makes unavailable in
   # capability mode). A relative path returns `nil` and falls through to libc.
   def self.directory_for(path : String) : {Directory, String}?
-    return nil if @@directories.empty?
+    return if @@directories.empty?
 
     p = ::Path[path]
-    return nil unless p.absolute?
+    return unless p.absolute?
     normalized = p.normalize
     best : {Directory, String}? = nil
     best_len = -1
@@ -498,9 +498,9 @@ module FreeBSD::Capsicum
   # docroot root itself works (`directory_for` rejects the base because it maps to
   # an empty relative path — meaningless for `File.open` but valid for listing).
   def self.directory_or_base_for(path : String) : {Directory, String}?
-    return nil if @@directories.empty?
+    return if @@directories.empty?
     p = ::Path[path]
-    return nil unless p.absolute?
+    return unless p.absolute?
     if dir = @@directories[p.normalize.to_s]?
       return {dir, "."}
     end

@@ -279,7 +279,7 @@ puts "send SIGTERM to stop"
 STDOUT.flush
 
 # SIGTERM closes the server, which closes the listener and makes #listen return.
-Signal::TERM.trap { server.close }
+Process.on_terminate { server.close }
 
 server.listen # blocks until the server is closed
 

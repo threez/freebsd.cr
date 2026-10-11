@@ -166,7 +166,7 @@ puts "sandboxed static server listening on #{addr} (pid #{Process.pid}), docroot
 puts "send SIGTERM to stop"
 STDOUT.flush
 
-Signal::TERM.trap { server.close }
+Process.on_terminate { server.close }
 
 server.listen # blocks until the server is closed
 

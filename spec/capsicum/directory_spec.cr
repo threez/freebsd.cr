@@ -244,8 +244,6 @@ describe FreeBSD::Capsicum::Directory do
 
           File.delete?(File.join(tmp, "b.txt")).should be_true
           File.delete?(File.join(tmp, "b.txt")).should be_false # already gone
-
-
         ensure
           FreeBSD::Capsicum.clear_directories
         end

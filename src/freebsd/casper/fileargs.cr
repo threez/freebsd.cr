@@ -263,7 +263,7 @@ module FreeBSD::Casper
   macro register_fileargs(paths, flags = 0, mode = 0o644_u16, fa_flags = FreeBSD::Casper::Service::FileArgs::OPEN)
     \{% if flag?(:freebsd) || flag?(:dragonfly) %}
       # Plain top-level install (runtime up); no main_user_code override. See net.cr.
-      FreeBSD::Casper.install_fileargs!({{paths}}, flags: {{flags}}, mode: {{mode}}, fa_flags: {{fa_flags}})
+      FreeBSD::Casper.install_fileargs!({{ paths }}, flags: {{ flags }}, mode: {{ mode }}, fa_flags: {{ fa_flags }})
     \{% end %}
   end
 end

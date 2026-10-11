@@ -10,7 +10,7 @@ describe "register_audit_helper + register_net compose" do
     fixture = File.join(__DIR__, "fixtures", "audit_net_resolve.cr")
     bin = File.tempname("audit_net_resolve", "")
     begin
-      build = Process.run(CRYSTAL_BIN, ["build", fixture, "-o", bin],
+      build = Process.run(CRYSTAL_BIN, ["build", fixture, "-o", bin] + CRYSTAL_BUILD_FLAGS,
         output: Process::Redirect::Inherit, error: Process::Redirect::Inherit)
       build.success?.should be_true
 

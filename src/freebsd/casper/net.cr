@@ -377,7 +377,7 @@ module FreeBSD::Casper
       unless FreeBSD::Casper::Helper.is_helper
         _chan = FreeBSD::Casper::Channel.open
         _net  = _chan.net
-        _net.limit({{mode}}) {{block}}
+        _net.limit({{ mode }}) {{ block }}
         _chan.close
         FreeBSD::Casper.install_net(_net)
       end

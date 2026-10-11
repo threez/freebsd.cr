@@ -40,7 +40,7 @@ begin
   ro.print("x")
   ro.flush
   STDOUT.puts "ro-write-ERROR-allowed"
-rescue ex
+rescue
   STDOUT.puts "ro-write-blocked"
 end
 

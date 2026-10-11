@@ -249,7 +249,7 @@ module FreeBSD::Casper
           _helper_sock = UNIXSocket.new(fd: FreeBSD::Casper::Helper.helper_fds[{{ name }}],
                                         type: Socket::Type::STREAM)
           {% unless name.empty? %}
-            LibC.setproctitle("- %s", (String.new(LibC.getprogname) + ".{{name.id}}").to_unsafe)
+            LibC.setproctitle("- %s", (String.new(LibC.getprogname) + ".{{ name.id }}").to_unsafe)
           {% end %}
           _server = FreeBSD::Casper::Helper::Server(FreeBSD::Casper::Codec::NVList).new(_helper_sock)
           {{ block.args[0].id }} = _server
@@ -259,11 +259,11 @@ module FreeBSD::Casper
         elsif FreeBSD::Casper::Helper.active_helper.nil?
           # Parent process: connect a client to this registration's helper.
           FreeBSD::Casper::Helper._register_client(
-            {{name}},
+            {{ name }},
             FreeBSD::Casper::Helper::Client(FreeBSD::Casper::Codec::NVList).new(
               UNIXSocket.new(fd: FreeBSD::Casper::Helper.client_fds[{{ name }}],
                              type: Socket::Type::STREAM),
-              {{name}}))
+              {{ name }}))
         end
         # A child whose active_helper != this name falls through: it is some other
         # registration's helper and must not touch this one's socket.

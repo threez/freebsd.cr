@@ -67,11 +67,9 @@ describe FreeBSD::Pkg::Jobs do
               db, ["this-package-does-not-exist-zzzz"],
               flags: FreeBSD::Pkg::JobFlags::DryRun
             ) do |jobs|
-              begin
-                jobs.solve
-              rescue FreeBSD::Pkg::Error
-                # expected for unknown package
-              end
+              jobs.solve
+            rescue FreeBSD::Pkg::Error
+              # expected for unknown package
             end
           end
         end

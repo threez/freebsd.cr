@@ -154,7 +154,7 @@ addr = listener.local_address
 STDOUT.puts "listen #{addr.address} #{addr.port}"
 STDOUT.flush
 
-Signal::TERM.trap { server.close }
+Process.on_terminate { server.close }
 
 server.listen
 
