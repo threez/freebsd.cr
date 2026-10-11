@@ -36,7 +36,7 @@ describe "sandboxed http proxy" do
     fixture = File.join(__DIR__, "fixtures", "http_proxy.cr")
     bin = File.tempname("sandbox_http_proxy", "")
     begin
-      build = Process.run(CRYSTAL_BIN, ["build", fixture, "-o", bin],
+      build = Process.run(CRYSTAL_BIN, ["build", fixture, "-o", bin] + CRYSTAL_BUILD_FLAGS,
         output: Process::Redirect::Inherit, error: Process::Redirect::Inherit)
       build.success?.should be_true
 

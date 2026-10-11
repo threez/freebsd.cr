@@ -13,7 +13,7 @@ describe "FreeBSD::Sandbox.define sqlite directive" do
     Dir.mkdir(db_dir)
 
     begin
-      build = Process.run(CRYSTAL_BIN, ["build", fixture, "-o", bin],
+      build = Process.run(CRYSTAL_BIN, ["build", fixture, "-o", bin] + CRYSTAL_BUILD_FLAGS,
         output: Process::Redirect::Inherit, error: Process::Redirect::Inherit)
       build.success?.should be_true
 

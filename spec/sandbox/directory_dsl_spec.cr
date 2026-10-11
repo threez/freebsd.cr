@@ -18,7 +18,7 @@ describe "FreeBSD::Sandbox.define directory directive" do
     File.write(File.join(tree_b, "b.txt"), "BBB")
 
     begin
-      build = Process.run(CRYSTAL_BIN, ["build", fixture, "-o", bin],
+      build = Process.run(CRYSTAL_BIN, ["build", fixture, "-o", bin] + CRYSTAL_BUILD_FLAGS,
         output: Process::Redirect::Inherit, error: Process::Redirect::Inherit)
       build.success?.should be_true
 

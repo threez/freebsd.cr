@@ -9,7 +9,7 @@ fmtcheck:
 	crystal tool format --check
 
 spec:
-	crystal spec -v
+	crystal spec -v -D without_mt
 
 lib/ameba/bin/ameba:
 	shards install

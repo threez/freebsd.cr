@@ -107,6 +107,15 @@ def in_sandbox_child(*, before_wait : (-> Nil)? = nil, &block : -> _) : Nil
       # SIGPIPE to SIG_IGN so that writes to sockets whose peer has exited
       # (e.g. a Helper grandchild that finished serving) raise IO::Error
       # instead of killing the child.
+      #
+      # `Process.after_fork_child_callbacks` only exists when compiled with
+      # `-D without_mt`: Crystal's multithreaded runtime (the default since
+      # Crystal 1.21) cannot safely resume after a raw `fork`/`pdfork` — the
+      # stdlib no longer even defines the event-loop/signal reinit hooks this
+      # relies on in that mode (see `Process.fork`, which refuses to compile
+      # under multithreading for the same reason). This binary — and every
+      # fixture built below via `CRYSTAL_BUILD_FLAGS` — must therefore be
+      # compiled with `-D without_mt` (see the Makefile and CI workflow).
       Process.after_fork_child_callbacks.each(&.call)
       LibC.signal(Signal::PIPE.value, LibC::SIG_IGN)
       reader.close
@@ -162,3 +171,10 @@ end
 # *before* any test scrubs `ENV` (e.g. privdrop specs), so specs that compile a
 # fixture subprocess don't depend on `PATH` still being intact when they run.
 CRYSTAL_BIN = Process.find_executable("crystal") || "crystal"
+
+# Extra flags every fixture that calls `FreeBSD::Capsicum.pdfork` (directly,
+# via `in_sandbox_child`, or via `FreeBSD::Sandbox.define`) must be built
+# with. See the comment on `Process.after_fork_child_callbacks` above: that
+# API — and the pdfork/fork machinery built on it — only exists under
+# Crystal's single-threaded (`without_mt`) runtime.
+CRYSTAL_BUILD_FLAGS = ["-D", "without_mt"]

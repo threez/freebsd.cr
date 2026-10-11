@@ -9,7 +9,7 @@ describe "FreeBSD::Sandbox standalone priming (.prime_tz_data! / .prime_tls_cont
     fixture = File.join(__DIR__, "fixtures", "standalone_prime_dsl.cr")
     bin = File.tempname("standalone_prime", "")
     begin
-      build = Process.run(CRYSTAL_BIN, ["build", fixture, "-o", bin],
+      build = Process.run(CRYSTAL_BIN, ["build", fixture, "-o", bin] + CRYSTAL_BUILD_FLAGS,
         output: Process::Redirect::Inherit, error: Process::Redirect::Inherit)
       build.success?.should be_true
 

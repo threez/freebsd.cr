@@ -174,7 +174,12 @@ module FreeBSD::Capsicum
   def self.pdfork(daemon : Bool = false,
                   cloexec : Bool = false,
                   & : -> Int32) : ProcessDescriptor
-    {% raise("pdfork is unsupported with multithreaded mode") if flag?(:preview_mt) %}
+    # `preview_mt` was how multithreading used to be opted into; it's now the
+    # default (and deprecated) and `without_mt` is how single-threaded mode is
+    # opted into instead. A raw `pdfork`'d child cannot safely resume Crystal
+    # execution under the multithreaded runtime (same reason `Process.fork`
+    # itself refuses to compile there), so require `without_mt` explicitly.
+    {% raise("pdfork is unsupported with multithreaded mode; compile with `-D without_mt`") unless flag?(:without_mt) %}
     {% if flag?(:freebsd) || flag?(:dragonfly) %}
       flags = 0
       flags |= LibPdfork::PD_DAEMON if daemon

@@ -34,6 +34,12 @@ jobs:
           # database. The fresh CI VM's pkg DB exists but isn't lockable
           # (`pkgdb_upgrade_lock` -> EPKG_FATAL), so they error here even though
           # they pass on a real host. Run every other spec directory.
+          #
+          # `-D without_mt`: the FreeBSD pkg's `crystal` defaults to Crystal's
+          # multithreaded runtime, under which raw `fork`/`pdfork` can no longer
+          # safely resume Crystal execution (the stdlib's post-fork reinit hooks
+          # are only defined in single-threaded mode). The Capsicum/casper specs
+          # pdfork directly, so the spec binary needs the single-threaded runtime.
           run: |
             set -e
             shards install
@@ -41,4 +47,4 @@ jobs:
             crystal build lib/ameba/src/cli.cr -o bin/ameba
             crystal tool format --check
             ./bin/ameba
-            crystal spec spec/audit spec/casper spec/capsicum spec/nvlist spec/privdrop spec/sandbox spec/spec_helper_spec.cr
+            crystal spec -D without_mt spec/audit spec/casper spec/capsicum spec/nvlist spec/privdrop spec/sandbox spec/spec_helper_spec.cr
