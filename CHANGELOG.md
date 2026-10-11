@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [15.1.12] - 2026-10-11
+
 ### Changed
 
 - Bumped the `ameba` dev dependency from `~> 1.6.0` to `~> 1.7.0`.

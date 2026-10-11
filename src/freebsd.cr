@@ -1,3 +1,3 @@
 module FreeBSD
-  VERSION = "15.1.11"
+  VERSION = "15.1.12"
 end
