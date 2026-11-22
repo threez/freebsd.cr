@@ -54,10 +54,12 @@ require "../directory"
       end
     end
 
-    def self.exists?(path)
+    # Crystal 1.22 added the `follow_symlinks` keyword (`File.exists?` always
+    # passes it); older versions call `exists?(path)`. The default covers both.
+    def self.exists?(path, *, follow_symlinks = true)
       if match = FreeBSD::Capsicum.directory_for(path)
         dir, rel = match
-        dir.exists?(rel)
+        follow_symlinks ? dir.exists?(rel) : !dir.info?(rel, false).nil?
       else
         previous_def
       end

@@ -381,7 +381,7 @@ from inside the sandbox — the canonical Capsicum privsep pattern.
 starts** — from a `Crystal.main_user_code` override, before `previous_def` —
 because neither child nor parent inherits a live event loop. When called after
 the runtime has started the child reinitialises its event loop automatically
-(via `Process.after_fork_child_callbacks`), so `sleep`, timers, and sockets
+(via `FreeBSD::Capsicum.after_fork_child`, which rebuilds the kqueue itself on Crystal >= 1.22), so `sleep`, timers, and sockets
 work, but GC state and open file descriptors are shared at the fork point.
 
 The child block can call `previous_def` itself to start a full Crystal runtime
