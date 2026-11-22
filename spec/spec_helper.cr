@@ -116,7 +116,7 @@ def in_sandbox_child(*, before_wait : (-> Nil)? = nil, &block : -> _) : Nil
       # under multithreading for the same reason). This binary — and every
       # fixture built below via `CRYSTAL_BUILD_FLAGS` — must therefore be
       # compiled with `-D without_mt` (see the Makefile and CI workflow).
-      Process.after_fork_child_callbacks.each(&.call)
+      FreeBSD::Capsicum.after_fork_child
       LibC.signal(Signal::PIPE.value, LibC::SIG_IGN)
       reader.close
       begin

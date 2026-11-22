@@ -376,7 +376,10 @@ module FreeBSD::Casper
       # serve loop can use non-blocking IO normally after Process.fork.
       client_sock, helper_sock = UNIXSocket.pair
 
-      _child_proc = Process.fork do
+      # `Process.fork` was removed in Crystal 1.22, so fork through a raw
+      # `pdfork`. `daemon: true` keeps the helper alive (and reaped by init)
+      # after the descriptor is closed, matching the old fork semantics.
+      _child_pd = FreeBSD::Capsicum.pdfork(daemon: true) do
         client_sock.close
         {% if flag?(:freebsd) || flag?(:dragonfly) %}
           progname = String.new(LibC.getprogname)
@@ -394,6 +397,7 @@ module FreeBSD::Casper
         ensure
           helper_sock.close
         end
+        0
       end
 
       helper_sock.close

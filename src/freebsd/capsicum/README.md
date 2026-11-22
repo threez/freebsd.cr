@@ -29,7 +29,7 @@ corrupt, making deadlocks near-certain.
 2. **Reinitialize the runtime immediately in the child.** Every call site in
    this library — `FreeBSD::Capsicum.pdfork`, `FreeBSD::Casper::Helper.spawn`,
    and the spec helper `in_sandbox_child` — calls
-   `Process.after_fork_child_callbacks` as its first act in the child. This
+   `FreeBSD::Capsicum.after_fork_child` as its first act in the child. This
    rehooks the event loop, signal handlers, and RNG seeds, giving the child a
    clean, single-threaded Crystal runtime.
 

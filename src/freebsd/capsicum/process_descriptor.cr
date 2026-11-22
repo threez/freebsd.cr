@@ -209,7 +209,7 @@ module FreeBSD::Capsicum
         #
         # `Crystal::EventLoop.current?` (non-lazy) is nil exactly in the
         # pre-runtime case, which is the correct discriminator.
-        Process.after_fork_child_callbacks.each(&.call) unless Crystal::EventLoop.current?.nil?
+        Capsicum.after_fork_child unless Crystal::EventLoop.current?.nil?
         status = begin
           yield
         rescue ex
