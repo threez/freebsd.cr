@@ -24,3 +24,37 @@ describe FreeBSD::Sandbox::PrivdropConfig do
     cfg.username.should be_nil
   end
 end
+
+# Regression for #6: the `bind` directive's listener must set SO_REUSEADDR so a
+# restarted service can rebind its port while server-side TIME_WAIT sockets
+# from the previous process's connections still exist.
+describe "FreeBSD::Sandbox.__bind_listener" do
+  it "sets SO_REUSEADDR on the listener" do
+    server = FreeBSD::Sandbox.__bind_listener("127.0.0.1", 0)
+    begin
+      server.reuse_address?.should be_true
+    ensure
+      server.close
+    end
+  end
+
+  it "rebinds a port that has server-side TIME_WAIT connections" do
+    server = FreeBSD::Sandbox.__bind_listener("127.0.0.1", 0)
+    port = server.local_address.port
+    client = TCPSocket.new("127.0.0.1", port)
+    conn = server.accept
+    # Server side closes first, so the server end enters TIME_WAIT.
+    conn.close
+    client.gets rescue nil
+    client.close
+    server.close
+
+    rebound = FreeBSD::Sandbox.__bind_listener("127.0.0.1", port)
+    begin
+      rebound.local_address.port.should eq(port)
+      rebound.reuse_address?.should be_true
+    ensure
+      rebound.close
+    end
+  end
+end

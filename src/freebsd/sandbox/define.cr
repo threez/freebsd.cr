@@ -462,6 +462,10 @@ module FreeBSD::Sandbox
     addr = ::Socket::IPAddress.new(host, port.to_i)
     server = ::TCPServer.new(addr.family)
     begin
+      # The family constructor (unlike `TCPServer.new(host, port)`) does not set
+      # SO_REUSEADDR; without it a restarted service can't rebind its port
+      # while TIME_WAIT sockets from the previous process linger (#6).
+      server.reuse_address = true
       server.bind(addr)
       server.listen
     rescue ex
