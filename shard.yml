@@ -1,5 +1,5 @@
 name: freebsd
-version: 15.1.13
+version: 15.1.14
 
 authors:
   - Vincent Landgraf <vincent@landgrafx.de>
